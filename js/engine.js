@@ -43,6 +43,28 @@ const STOPWORDS = new Set([
   "בבקשה",
   "חדש",
   "חדשה",
+  "חדשות",
+  "חדשים",
+  "מחודש",
+  "יקר",
+  "יקרה",
+  "יקרים",
+  "יקרות",
+  "גדול",
+  "גדולה",
+  "ענק",
+  "קטן",
+  "קטנה",
+  "מחר",
+  "שבוע",
+  "יומיים",
+  "ימים",
+  "שלושה",
+  "צריך",
+  "משהו",
+  "איתו",
+  "שלא",
+  "ייקח",
   "ו",
   "או",
   "גם",
@@ -63,19 +85,47 @@ export function normalize(value) {
     .trim();
 }
 
+function parseMaxDays(original) {
+  if (/מחר/.test(original)) return 1;
+  if (/יומיים/.test(original)) return 2;
+  if (/שלושה ימים/.test(original)) return 3;
+  const numbered = original.match(/(\d{1,2})\s*ימים/);
+  if (numbered) return Number(numbered[1]);
+  if (/שבוע/.test(original)) return /שלא|לא יותר|לפני|פחות/.test(original) ? 6 : 7;
+  return null;
+}
+
+function parseUses(original) {
+  const uses = [];
+  if (/ספורט|ריצה|לרוץ|זיעה/.test(original)) uses.push("sport");
+  if (/בית ספר|בית-ספר|כיתה|כיתתי|שיעור|לתיק/.test(original)) uses.push("school");
+  if (/גיימינג|למשחקים|משחקי מחשב/.test(original)) uses.push("gaming");
+  return uses;
+}
+
+function parseSize(original) {
+  if (/לא ענק|לא גדול|קטן|קטנה|קטנים/.test(original)) return "small";
+  if (/ענק|גדול/.test(original)) return "large";
+  return null;
+}
+
 export function parseQuery(raw) {
   const original = String(raw ?? "").trim();
+  const wantsFast = /מהיר|דחוף|מחר|שיגיע מהר|עדיף משלוח/.test(original);
+  const wantsCheap = /זול|לא יקר/.test(original);
   let mode = null;
-  if (/מהיר|דחוף/.test(original)) mode = "fast";
-  if (/זול/.test(original)) mode = mode ? "balance" : "cheap";
+  if (wantsFast && wantsCheap) mode = "balance";
+  else if (wantsFast) mode = "fast";
+  else if (wantsCheap) mode = "cheap";
 
-  const budgetMatch = original.match(/(?:עד|מתחת ל-?|פחות מ-?)\s*(\d{1,6})/);
+  const budgetMatch = original.match(/(?:עד|מתחת ל-?|פחות מ-?|לא יותר מ-?)\s*(\d{1,6})/);
   const budget = budgetMatch ? Number(budgetMatch[1]) : null;
-  const withoutBudget = original.replace(
-    /(?:עד|מתחת ל-?|פחות מ-?)\s*\d{1,6}\s*(?:שקל(?:ים)?|ש״ח|ש"ח|שח|₪)?/g,
-    " ",
-  );
-  const tokens = normalize(withoutBudget)
+  const condition = /בלי מחודש|לא מחודש|אל תראה מחודש|רק חדש|חדש/.test(original) ? "new" : null;
+  const stripped = original
+    .replace(/(?:עד|מתחת ל-?|פחות מ-?|לא יותר מ-?)\s*\d{1,6}\s*(?:שקל(?:ים)?|ש״ח|ש"ח|שח|₪)?/g, " ")
+    .replace(/בית ספר|בית-ספר|עדיף משלוח מהיר|שיגיע מהר|משלוח מהיר|בלי מחודש|לא מחודש|אל תראה מחודש|רק חדש|לא ענק|לא גדול|לא יקר(?:ה|ות|ים)?|למשחקים|משחקי מחשב|שלא ייקח שבוע|לא יותר משבוע/g, " ")
+    .replace(/לשיעור|שיעור|ספורט|ריצה|לרוץ|לתיק|גיימינג|כיתה|כיתתי/g, " ");
+  const tokens = normalize(stripped)
     .split(" ")
     .filter((token) => token.length > 1 && !STOPWORDS.has(token) && !/^\d+$/.test(token));
 
@@ -84,13 +134,38 @@ export function parseQuery(raw) {
     tokens,
     budget,
     mode,
+    condition,
+    maxDays: parseMaxDays(original),
+    uses: parseUses(original),
+    size: parseSize(original),
   };
 }
 
-export function searchProducts(products, text) {
+function facetScore(product, uses, size) {
+  let score = 0;
+  const productUses = product.uses ?? [];
+  for (const use of uses) {
+    if (productUses.includes(use)) score += 8;
+    else if (use === "sport" || use === "gaming") score -= 3;
+  }
+  if (size && product.size) {
+    if (product.size === size) score += 6;
+    else if (
+      (size === "small" && product.size === "large") ||
+      (size === "large" && product.size === "small")
+    ) {
+      score -= 5;
+    }
+  }
+  return score;
+}
+
+export function searchProducts(products, text, intent = {}) {
   const needle = normalize(text);
-  if (!needle) return [];
-  const tokens = needle.split(" ").filter((token) => token.length > 1);
+  const tokens = needle ? needle.split(" ").filter((token) => token.length > 1) : [];
+  const uses = intent.uses ?? [];
+  const size = intent.size ?? null;
+  if (tokens.length === 0 && uses.length === 0 && !size) return [];
 
   return products
     .map((product) => {
@@ -98,8 +173,8 @@ export function searchProducts(products, text) {
       const category = normalize(product.category);
       const blurb = normalize(product.blurb);
       const tags = product.tags.map(normalize);
-      let score = 0;
-      if (name.includes(needle)) score += 8;
+      let score = facetScore(product, uses, size);
+      if (needle && name.includes(needle)) score += 8;
       for (const token of tokens) {
         if (name.includes(token)) score += 4;
         if (tags.some((tag) => tag.includes(token) || token.includes(tag))) score += 3;
@@ -157,12 +232,73 @@ export function splitByBudget(offers, budget) {
 }
 
 export function explainWinner(offer, mode) {
+  return explainDecision(offer, { mode });
+}
+
+export function explainDecision(offer, intent = {}) {
   const sum = formatShekel(totalPrice(offer));
-  if (mode === "fast") return `מגיע הכי מהר: ${daysLabel(offer.days)}, סה״כ ${sum}`;
-  if (mode === "balance") {
-    return `השילוב הטוב ביותר של מחיר וזמן משלוח: ${sum}, ${daysLabel(offer.days)}`;
+  const parts = [];
+  if (intent.condition === "new") parts.push("הוא חדש");
+  if (intent.maxDays != null) parts.push(`המשלוח עומד בזמן שביקשת (${daysLabel(offer.days)})`);
+  if (intent.budget != null) parts.push("המחיר בתוך התקציב");
+  if (intent.mode === "fast") parts.push("הוא המהיר ביותר מבין מה שנשאר");
+  else if (intent.mode === "balance") parts.push("יש לו את השילוב הטוב ביותר של מחיר וזמן משלוח");
+  else parts.push("הוא הזול ביותר כולל משלוח");
+  return `${parts.join(", ")}: ${sum}`;
+}
+
+export function explainProduct(product, matches, intent) {
+  const reasons = [];
+  const uses = intent.uses ?? [];
+  if (uses.includes("sport") && uses.includes("school") && product.uses?.includes("sport")) {
+    reasons.push("מתאים לשיעור ספורט");
+  } else if (uses.includes("sport") && product.uses?.includes("sport")) {
+    reasons.push("מתאים לספורט");
+  } else if (uses.includes("school") && product.uses?.includes("school")) {
+    reasons.push("מתאים לבית הספר");
   }
-  return `הזול ביותר כולל משלוח: ${sum}`;
+  if (uses.includes("gaming") && product.uses?.includes("gaming")) reasons.push("מיועד למשחקים");
+  if (intent.size === "large" && product.size === "large") reasons.push("מהגדולים");
+  if (intent.size === "small" && product.size === "small") reasons.push("מהקטנים");
+  if (reasons.length === 0) return "";
+  const other = (matches ?? []).find(
+    (match, index) =>
+      index > 0 &&
+      match.product.category === product.category &&
+      match.score >= matches[0].score - 6,
+  );
+  const contrast = other ? ` לא ${other.product.name}.` : "";
+  return `בחרתי במוצר הזה כי הוא ${reasons.join(" ו")}.${contrast}`;
+}
+
+export function intentNotes(intent) {
+  if (!intent) return [];
+  const notes = [];
+  if (intent.text) notes.push(intent.text);
+  const uses = intent.uses ?? [];
+  if (uses.includes("sport") && uses.includes("school")) notes.push("לשיעור ספורט");
+  else if (uses.includes("sport")) notes.push("לספורט");
+  else if (uses.includes("school")) notes.push("לבית הספר");
+  if (uses.includes("gaming")) notes.push("למשחקים");
+  if (intent.size === "large") notes.push("גדול");
+  if (intent.size === "small") notes.push("קטן");
+  if (intent.condition === "new") notes.push("רק חדש");
+  if (intent.maxDays === 1) notes.push("משלוח עד מחר");
+  else if (intent.maxDays != null) notes.push(`משלוח עד ${intent.maxDays} ימים`);
+  if (intent.budget != null) notes.push(`תקציב עד ${formatShekel(intent.budget)}`);
+  if (intent.askedMode === "fast") notes.push("עדיפות למשלוח מהיר");
+  else if (intent.askedMode === "cheap") notes.push("עדיפות למחיר");
+  else if (intent.askedMode === "balance") notes.push("גם מחיר וגם מהירות");
+  return notes;
+}
+
+export function noMatchMessage(intent) {
+  const bits = [];
+  if (intent?.budget != null) bits.push(`עד ${formatShekel(intent.budget)}`);
+  if (intent?.condition === "new") bits.push("רק חדש");
+  if (intent?.maxDays != null) bits.push(`משלוח עד ${intent.maxDays} ימים`);
+  if (bits.length === 0) return "אף הצעה לא עומדת במה שביקשת.";
+  return `אין הצעה שעומדת בכל התנאים (${bits.join(", ")}). אלה ההצעות שלא נכנסו.`;
 }
 
 export function understoodLine(parsed, mode) {
@@ -180,17 +316,48 @@ export function interpret(products, raw, previousMode = "cheap") {
   const mode = parsed.mode ?? previousMode ?? "cheap";
   return {
     ...parsed,
+    askedMode: parsed.mode,
     mode,
-    matches: searchProducts(products, parsed.text),
+    matches: searchProducts(products, parsed.text, parsed),
   };
 }
 
-export function compareProduct(product, mode, budget) {
-  const { eligible, overBudget } = splitByBudget(product.offers, budget);
+function asIntent(modeOrIntent, budget) {
+  if (modeOrIntent && typeof modeOrIntent === "object") return modeOrIntent;
   return {
-    winner: rankOffers(eligible, mode)[0] ?? null,
-    ranked: rankOffers(eligible, mode),
+    mode: modeOrIntent ?? "cheap",
+    budget: budget ?? null,
+    condition: null,
+    maxDays: null,
+  };
+}
+
+export function compareProduct(product, modeOrIntent, budget = null) {
+  const intent = asIntent(modeOrIntent, budget);
+  const eligible = [];
+  const overBudget = [];
+  const excluded = [];
+  for (const offer of product.offers) {
+    if (intent.condition === "new" && offer.condition !== "new") {
+      excluded.push({ offer, reason: "מחודש, וביקשת מוצר חדש" });
+      continue;
+    }
+    if (intent.maxDays != null && offer.days > intent.maxDays) {
+      excluded.push({ offer, reason: `${daysLabel(offer.days)} זה יותר מהזמן שביקשת` });
+      continue;
+    }
+    if (intent.budget != null && totalPrice(offer) > intent.budget) {
+      overBudget.push(offer);
+      continue;
+    }
+    eligible.push(offer);
+  }
+  const ranked = rankOffers(eligible, intent.mode ?? "cheap");
+  return {
+    winner: ranked[0] ?? null,
+    ranked,
     overBudget: rankOffers(overBudget, "cheap"),
+    excluded,
   };
 }
 

@@ -3,6 +3,9 @@ import test from "node:test";
 import { products } from "../js/data.js";
 import {
   compareProduct,
+  explainDecision,
+  explainProduct,
+  intentNotes,
   interpret,
   parseQuery,
   productById,
@@ -52,6 +55,52 @@ test("a query without a product does not invent a match", () => {
   assert.equal(result.text, "");
   assert.equal(result.matches.length, 0);
   assert.equal(result.mode, "cheap");
+});
+
+test("a sport-class sentence picks running shoes and drops the slow offer", () => {
+  const result = interpret(products, "נעליים לשיעור ספורט, חדשות, ושלא ייקח שבוע");
+  assert.equal(result.matches[0].product.id, "shoes");
+  assert.equal(result.condition, "new");
+  assert.equal(result.maxDays, 6);
+  assert.ok(intentNotes(result).includes("לשיעור ספורט"));
+  const comparison = compareProduct(result.matches[0].product, result);
+  assert.equal(comparison.winner.store, "חנות הנקודה");
+  assert.equal(comparison.excluded[0].offer.store, "מחסן החסכון");
+  assert.match(explainDecision(comparison.winner, result), /חדש/);
+  const because = explainProduct(result.matches[0].product, result.matches, result);
+  assert.match(because, /שיעור ספורט/);
+  assert.match(because, /נעלי יומיום/);
+  assert.doesNotMatch(because, /FitBeat/);
+});
+
+test("large lego is chosen over the small car set", () => {
+  const result = interpret(products, "לגו גדול עד 300");
+  assert.equal(result.matches[0].product.id, "lego");
+  assert.equal(result.budget, 300);
+  assert.equal(result.size, "large");
+});
+
+test("a small bottle for a bag is the 500ml bottle", () => {
+  const result = interpret(products, "בקבוק לתיק, לא ענק");
+  assert.equal(result.matches[0].product.id, "bottle500");
+  assert.equal(result.size, "small");
+});
+
+test("a gaming mouse that must be new and under 160 has no eligible offer", () => {
+  const result = interpret(products, "עכבר למשחקים, בלי מחודש, עד 160");
+  assert.equal(result.matches[0].product.id, "mouse");
+  assert.equal(result.condition, "new");
+  assert.equal(result.budget, 160);
+  const comparison = compareProduct(result.matches[0].product, result);
+  assert.equal(comparison.winner, null);
+  assert.equal(comparison.excluded[0].offer.store, "מחסן החסכון");
+  assert.equal(comparison.overBudget.length, 2);
+});
+
+test("cheap and fast together still mean balance", () => {
+  const result = interpret(products, "מטען לטלפון, לא יקר, אבל שיגיע מהר");
+  assert.equal(result.askedMode, "balance");
+  assert.match(result.text, /מטען/);
 });
 
 test("every similar product exists and every product has several offers", () => {

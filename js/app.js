@@ -2,12 +2,14 @@ import { examples, products } from "./data.js";
 import {
   compareProduct,
   daysLabel,
-  explainWinner,
+  explainDecision,
+  explainProduct,
   formatShekel,
+  intentNotes,
   interpret,
+  noMatchMessage,
   productById,
   totalPrice,
-  understoodLine,
 } from "./engine.js";
 
 const CONDITION = {
@@ -60,8 +62,7 @@ const ICONS = {
 const state = {
   query: "",
   mode: "cheap",
-  budget: null,
-  parsedText: "",
+  intent: null,
   matches: [],
   productId: null,
   searched: false,
@@ -89,15 +90,18 @@ render();
 function runSearch(raw) {
   const result = interpret(products, raw, state.mode);
   state.query = raw;
+  state.intent = result;
   state.mode = result.mode;
-  state.budget = result.budget;
-  state.parsedText = result.text;
   state.matches = result.matches;
   state.productId = result.matches[0]?.product.id ?? null;
   state.searched = true;
   input.value = raw;
   render();
   resultsRoot.scrollIntoView({ behavior: "smooth", block: "start" });
+}
+
+function activeIntent() {
+  return { ...(state.intent ?? {}), mode: state.mode };
 }
 
 function selectProduct(id) {
@@ -123,7 +127,7 @@ function render() {
 function home() {
   const wrap = el("section", { class: "home" }, [
     el("h2", {}, "אפשר להתחיל מכאן"),
-    el("p", {}, "בחירה של מוצר פותחת את ההשוואה. אחר כך אפשר לשנות מה חשוב: מחיר, מהירות, או שילוב."),
+    el("p", {}, "אפשר לכתוב משפט שלם: מה לחפש, כמה אפשר להוציא, ואם חשוב שיהיה חדש או שיגיע מהר."),
   ]);
   const grid = el("div", { class: "choice-grid" });
   for (const id of ["soundmini", "bottle750", "lego", "ball"]) {
@@ -135,9 +139,14 @@ function home() {
 
 function summary() {
   const box = el("section", { class: "summary", role: "status" }, [
-    el("p", { class: "eyebrow" }, "מתוך מה שכתבת"),
-    el("p", { class: "understood" }, understoodLine({ text: state.parsedText, budget: state.budget }, state.mode)),
+    el("p", { class: "eyebrow" }, "המנוע הבין כך"),
   ]);
+  const notes = el("div", { class: "constraints" });
+  for (const note of intentNotes(state.intent)) notes.append(el("span", { class: "constraint" }, note));
+  box.append(notes);
+  const product = productById(products, state.productId);
+  const because = product ? explainProduct(product, state.matches, state.intent ?? {}) : "";
+  if (because) box.append(el("p", { class: "because" }, because));
   const closeMatches = closeChoices(state.matches);
   if (closeMatches.length > 1) {
     box.append(el("p", { class: "chooser-label" }, "יש כמה מוצרים שמתאימים. זה המוצר?"));
@@ -191,38 +200,35 @@ function modeSwitch() {
 }
 
 function offerSection(product) {
-  const comparison = compareProduct(product, state.mode, state.budget);
+  const intent = activeIntent();
+  const comparison = compareProduct(product, intent);
   const section = el("section", {}, [
     el("h3", {}, "אותו מוצר, מוכרים שונים"),
   ]);
-  if (!comparison.winner) {
-    section.append(empty(`אין הצעה עד ${formatShekel(state.budget)}. אלה ההצעות הקרובות, כולן מעל התקציב.`));
-  } else if (state.budget != null) {
-    section.append(el("p", { class: "budget-note" }, `${comparison.ranked.length} הצעות עד ${formatShekel(state.budget)}.`));
+  if (!comparison.winner) section.append(empty(noMatchMessage(intent)));
+  else if (intent.budget != null || intent.condition === "new" || intent.maxDays != null) {
+    section.append(el("p", { class: "budget-note" }, `${comparison.ranked.length} הצעות עומדות במה שכתבת.`));
   }
   const list = el("div", { class: "offers" });
-  comparison.ranked.forEach((offer, index) => {
-    list.append(offerCard(offer, index === 0));
-  });
-  section.append(list);
-  if (comparison.overBudget.length > 0 && comparison.winner) {
-    section.append(el("h3", { class: "over-title" }, "מעל התקציב"));
-    const extra = el("div", { class: "offers" });
-    for (const offer of comparison.overBudget) extra.append(offerCard(offer, false, true));
-    section.append(extra);
-  }
-  if (!comparison.winner) {
-    const extra = el("div", { class: "offers" });
-    for (const offer of comparison.overBudget) extra.append(offerCard(offer, false, true));
-    section.append(extra);
-  }
+  comparison.ranked.forEach((offer, index) => list.append(offerCard(offer, index === 0)));
+  if (comparison.ranked.length > 0) section.append(list);
+  appendRejected(section, "מעל התקציב", comparison.overBudget.map((offer) => ({ offer, reason: "מעל התקציב שכתבת" })));
+  appendRejected(section, "לא עומד בתנאים", comparison.excluded);
   return section;
 }
 
-function offerCard(offer, winner, overBudget = false) {
+function appendRejected(section, title, rows) {
+  if (!rows || rows.length === 0) return;
+  section.append(el("h3", { class: "over-title" }, title));
+  const extra = el("div", { class: "offers" });
+  for (const row of rows) extra.append(offerCard(row.offer, false, row.reason));
+  section.append(extra);
+}
+
+function offerCard(offer, winner, rejectedReason = "") {
   const classes = ["offer"];
   if (winner) classes.push("is-winner");
-  if (overBudget) classes.push("is-over");
+  if (rejectedReason) classes.push("is-over");
   const card = el("article", { class: classes.join(" "), "data-store": offer.store });
   if (winner) card.dataset.winner = "true";
   const main = el("div", {}, [
@@ -234,8 +240,8 @@ function offerCard(offer, winner, overBudget = false) {
     el("p", { class: "shipping-line" }, shippingLine(offer)),
     el("p", { class: "detail" }, offer.detail),
   ]);
-  if (winner) main.append(el("p", { class: "reason" }, explainWinner(offer, state.mode)));
-  if (overBudget) main.append(el("p", { class: "reason over-reason" }, "מעל התקציב שכתבת"));
+  if (winner) main.append(el("p", { class: "reason" }, explainDecision(offer, activeIntent())));
+  if (rejectedReason) main.append(el("p", { class: "reason over-reason" }, rejectedReason));
   const price = el("div", { class: "price-block" }, [
     el("p", { class: "total" }, formatShekel(totalPrice(offer))),
     el("p", { class: "split" }, `מוצר ${formatShekel(offer.price)} · משלוח ${offer.shipping === 0 ? "חינם" : formatShekel(offer.shipping)}`),

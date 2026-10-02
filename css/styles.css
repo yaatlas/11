@@ -247,7 +247,17 @@ button { cursor: pointer; }
 
 .hero-product { display: flex; gap: 14px; align-items: center; }
 
-.understood { font-size: 20px; font-weight: 800; margin-top: 4px; }
+.constraints { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
+
+.constraint {
+  background: #e7f3ef;
+  color: var(--green-dark);
+  border-radius: 999px;
+  padding: 6px 12px;
+  font-weight: 700;
+}
+
+.because { margin-top: 12px; font-size: 18px; font-weight: 700; }
 
 .chooser { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
 
