@@ -1,304 +1,379 @@
+import { productArt, storeArt } from "./art.js";
+import { buildSpec, collect, describeSpec, filterChoices, storeById } from "./collector.js";
 import { examples, products } from "./data.js";
-import {
-  compareProduct,
-  daysLabel,
-  explainDecision,
-  explainProduct,
-  formatShekel,
-  intentNotes,
-  interpret,
-  noMatchMessage,
-  productById,
-  totalPrice,
-} from "./engine.js";
+import { daysLabel, explainDecision, explainProduct, formatShekel, noMatchMessage, totalPrice } from "./engine.js";
 
-const CONDITION = {
-  new: "חדש",
-  refurbished: "מחודש",
-};
-
-const MODES = [
-  { id: "cheap", label: "הכי זול כולל משלוח" },
-  { id: "fast", label: "הכי מהר" },
-  { id: "balance", label: "איזון בין מחיר למהירות" },
-];
-
-const ICONS = {
-  headphones: `
-    <path d="M14 28v-5a10 10 0 0 1 20 0v5"/>
-    <rect x="8" y="26" width="8" height="14" rx="3"/>
-    <rect x="32" y="26" width="8" height="14" rx="3"/>
-  `,
-  bottle: `
-    <path d="M20 8h8v5l4 5v18a4 4 0 0 1-4 4h-8a4 4 0 0 1-4-4V18l4-5z"/>
-    <path d="M20 20h8"/>
-  `,
-  shoe: `
-    <path d="M8 30c6-1 10-8 14-8h6l8 4 4 2v4c0 4-6 8-14 8H14c-4 0-8-3-8-7z"/>
-    <path d="M22 22c2-4 6-6 10-6"/>
-  `,
-  bricks: `
-    <rect x="8" y="12" width="14" height="10" rx="1.5"/>
-    <rect x="24" y="12" width="16" height="10" rx="1.5"/>
-    <rect x="14" y="26" width="20" height="10" rx="1.5"/>
-  `,
-  mouse: `
-    <rect x="14" y="8" width="20" height="30" rx="10"/>
-    <path d="M24 8v12"/>
-  `,
-  battery: `
-    <rect x="8" y="16" width="28" height="16" rx="3"/>
-    <path d="M36 20h4v8h-4"/>
-    <path d="M14 24h8"/>
-  `,
-  ball: `
-    <circle cx="24" cy="24" r="14"/>
-    <path d="M10 24h28"/>
-    <path d="M24 10c5 6 5 22 0 28"/>
-    <path d="M24 10c-5 6-5 22 0 28"/>
-  `,
-};
+const CONDITION = { new: "חדש", used: "משומש" };
+const choices = filterChoices();
+const thread = document.querySelector("#thread");
+const filtersRoot = document.querySelector("#filters");
+const form = document.querySelector("#composer");
+const input = document.querySelector("#query");
+const pending = document.querySelector("#pending");
+const photo = document.querySelector("#photo");
+const micBtn = document.querySelector("#mic-btn");
 
 const state = {
-  query: "",
+  messages: [],
   mode: "cheap",
-  intent: null,
-  matches: [],
-  productId: null,
-  searched: false,
+  pendingImage: null,
+  openReviews: new Set(),
 };
 
-const form = document.querySelector("#search-form");
-const input = document.querySelector("#query");
-const examplesRoot = document.querySelector("#examples");
-const resultsRoot = document.querySelector("#results");
+const welcome = {
+  role: "assistant",
+  kind: "welcome",
+  text: "אפשר לכתוב משפט, לבחור מסננים, להקליט, או להעלות תמונה. אני אחפש גם בחנויות וגם באתרים, ואראה דירוג וביקורות. המחירים והביקורות כאן לדוגמה.",
+};
+
+renderFilters();
+renderThread();
 
 form.addEventListener("submit", (event) => {
   event.preventDefault();
-  runSearch(input.value);
+  submit(input.value.trim());
 });
 
-examples.forEach((example) => {
-  examplesRoot.append(chip(example, () => {
-    input.value = example;
-    runSearch(example);
-  }));
+input.addEventListener("keydown", (event) => {
+  if (event.key === "Enter" && !event.shiftKey) {
+    event.preventDefault();
+    submit(input.value.trim());
+  }
 });
 
-render();
+document.querySelector("#photo-btn").addEventListener("click", () => photo.click());
+photo.addEventListener("change", () => {
+  const file = photo.files?.[0];
+  photo.value = "";
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = () => {
+    state.pendingImage = String(reader.result);
+    renderPending();
+  };
+  reader.readAsDataURL(file);
+});
 
-function runSearch(raw) {
-  const result = interpret(products, raw, state.mode);
-  state.query = raw;
-  state.intent = result;
-  state.mode = result.mode;
-  state.matches = result.matches;
-  state.productId = result.matches[0]?.product.id ?? null;
-  state.searched = true;
-  input.value = raw;
-  render();
-  resultsRoot.scrollIntoView({ behavior: "smooth", block: "start" });
-}
+micBtn.addEventListener("click", toggleMic);
 
-function activeIntent() {
-  return { ...(state.intent ?? {}), mode: state.mode };
-}
-
-function selectProduct(id) {
-  state.productId = id;
-  render();
-}
-
-function render() {
-  resultsRoot.replaceChildren();
-  if (!state.searched) {
-    resultsRoot.append(home());
-    return;
+function submit(text) {
+  const image = state.pendingImage;
+  if (!text && !image) return;
+  state.messages.push({ role: "user", text, image });
+  state.pendingImage = null;
+  input.value = "";
+  renderPending();
+  if (!text) {
+    state.messages.push({
+      role: "assistant",
+      kind: "photo",
+      text: "קיבלתי את התמונה. אין עדיין זיהוי תמונה אוטומטי, אז כתוב מה רואים בה או בחר מוצר קרוב.",
+    });
+  } else {
+    answer(text);
   }
-  resultsRoot.append(summary());
-  if (!state.productId) {
-    resultsRoot.append(empty("לא מצאתי מוצר כזה בקטלוג לדוגמה. כדאי לכתוב שם של מוצר, למשל אוזניות או בקבוק."));
-    return;
-  }
-  const product = productById(products, state.productId);
-  resultsRoot.append(productHero(product), modeSwitch(), offerSection(product), similarSection(product));
+  renderThread();
 }
 
-function home() {
-  const wrap = el("section", { class: "home" }, [
-    el("h2", {}, "אפשר להתחיל מכאן"),
-    el("p", {}, "אפשר לכתוב משפט שלם: מה לחפש, כמה אפשר להוציא, ואם חשוב שיהיה חדש או שיגיע מהר."),
-  ]);
-  const grid = el("div", { class: "choice-grid" });
-  for (const id of ["soundmini", "bottle750", "lego", "ball"]) {
-    grid.append(productChoice(productById(products, id), () => runSearch(productById(products, id).name)));
-  }
-  wrap.append(grid);
-  return wrap;
+function answer(text) {
+  const spec = buildSpec(text, readFilters(), state.mode);
+  state.mode = spec.mode;
+  state.messages.push({ role: "assistant", kind: "results", spec, result: collect(spec) });
 }
 
-function summary() {
-  const box = el("section", { class: "summary", role: "status" }, [
-    el("p", { class: "eyebrow" }, "המנוע הבין כך"),
-  ]);
-  const notes = el("div", { class: "constraints" });
-  for (const note of intentNotes(state.intent)) notes.append(el("span", { class: "constraint" }, note));
-  box.append(notes);
-  const product = productById(products, state.productId);
-  const because = product ? explainProduct(product, state.matches, state.intent ?? {}) : "";
-  if (because) box.append(el("p", { class: "because" }, because));
-  const closeMatches = closeChoices(state.matches);
-  if (closeMatches.length > 1) {
-    box.append(el("p", { class: "chooser-label" }, "יש כמה מוצרים שמתאימים. זה המוצר?"));
-    const row = el("div", { class: "chooser" });
-    for (const match of closeMatches) {
-      const selected = match.product.id === state.productId;
-      row.append(chip(match.product.name, () => selectProduct(match.product.id), selected));
-    }
-    box.append(row);
+function rerun(modeOverride = null) {
+  const user = [...state.messages].reverse().find((message) => message.role === "user" && message.text);
+  if (!user) return;
+  const resultIndex = state.messages.findLastIndex((message) => message.kind === "results");
+  const spec = buildSpec(user.text, readFilters(), state.mode, modeOverride);
+  state.mode = spec.mode;
+  const next = { role: "assistant", kind: "results", spec, result: collect(spec) };
+  if (resultIndex >= 0) state.messages[resultIndex] = next;
+  else state.messages.push(next);
+  renderThread();
+}
+
+function renderFilters() {
+  filtersRoot.replaceChildren(
+    el("h2", {}, "סינון"),
+    selectField("category", "קטגוריה", ["all", ...choices.categories], { all: "הכול" }),
+    selectField("channel", "איפה קונים", ["all", "online", "store"], { all: "חנות ואתר", online: "רק אתר", store: "רק חנות" }),
+    selectField("condition", "מצב", ["all", "new", "used"], { all: "הכול", new: "חדש", used: "משומש" }),
+    selectField("brand", "מותג", ["all", ...choices.brands], { all: "הכול" }),
+    selectField("color", "צבע", ["all", ...choices.colors], { all: "הכול" }),
+    selectField("sizeLabel", "מידה", ["all", ...choices.sizes], { all: "הכול" }),
+  );
+  const prices = el("div", { class: "field" }, [el("span", {}, "טווח מחיר, כולל משלוח")]);
+  const row = el("div", { class: "price-row" });
+  row.append(numberField("priceMin", "מ־"), numberField("priceMax", "עד"));
+  prices.append(row);
+  filtersRoot.append(prices);
+  filtersRoot.append(el("button", { id: "reset", type: "button", onclick: resetFilters }, "נקה סינון"));
+}
+
+function selectField(name, label, values, labels) {
+  const field = el("label", { class: "field" }, [el("span", {}, label)]);
+  const select = el("select", { name });
+  for (const value of values) {
+    select.append(el("option", { value }, labels[value] ?? value));
+  }
+  select.addEventListener("change", () => rerun());
+  field.append(select);
+  return field;
+}
+
+function numberField(name, placeholder) {
+  const input = el("input", { type: "number", name, min: "0", placeholder, "aria-label": placeholder });
+  input.addEventListener("change", () => rerun());
+  return input;
+}
+
+function readFilters() {
+  const data = {};
+  for (const field of filtersRoot.querySelectorAll("[name]")) data[field.name] = field.value;
+  return data;
+}
+
+function resetFilters() {
+  for (const field of filtersRoot.querySelectorAll("select")) field.value = "all";
+  for (const field of filtersRoot.querySelectorAll("input")) field.value = "";
+  rerun();
+}
+
+function renderPending() {
+  pending.hidden = !state.pendingImage;
+  pending.replaceChildren();
+  if (!state.pendingImage) return;
+  const image = el("img", { alt: "תמונה שנבחרה" });
+  image.src = state.pendingImage;
+  pending.append(image, el("button", { type: "button", onclick: () => { state.pendingImage = null; renderPending(); } }, "הסר תמונה"));
+}
+
+function renderThread() {
+  const atBottom = thread.scrollHeight - thread.scrollTop - thread.clientHeight < 80;
+  thread.replaceChildren();
+  thread.append(renderMessage(welcome));
+  state.messages.forEach((message, index) => thread.append(renderMessage(message, index)));
+  if (atBottom) thread.scrollTop = thread.scrollHeight;
+}
+
+function renderMessage(message, index = -1) {
+  if (message.kind === "welcome") return welcomeBubble();
+  if (message.role === "user") return userBubble(message);
+  if (message.kind === "photo") return photoHelp(message.text);
+  if (message.kind === "note") return el("article", { class: "bubble assistant" }, [el("p", {}, message.text)]);
+  return resultsBubble(message, index);
+}
+
+function welcomeBubble() {
+  const box = el("article", { class: "bubble assistant" }, [el("p", {}, welcome.text)]);
+  const row = el("div", { class: "chips" });
+  for (const example of examples) row.append(el("button", { type: "button", class: "chip", onclick: () => submit(example) }, example));
+  box.append(row);
+  return box;
+}
+
+function userBubble(message) {
+  const box = el("article", { class: "bubble user" });
+  if (message.text) box.append(el("p", {}, message.text));
+  if (message.image) {
+    const image = el("img", { class: "user-photo", alt: "תמונה שנשלחה" });
+    image.src = message.image;
+    box.append(image);
   }
   return box;
 }
 
-function closeChoices(matches) {
-  if (matches.length < 2) return matches;
-  const top = matches[0].score;
-  return matches.filter((match) => match.score >= top - 2).slice(0, 5);
+function photoHelp(text) {
+  const box = el("article", { class: "bubble assistant" }, [el("p", {}, text)]);
+  const row = el("div", { class: "chips" });
+  for (const product of products.slice(0, 6)) {
+    row.append(el("button", { type: "button", class: "chip", onclick: () => submit(product.name) }, product.name));
+  }
+  box.append(row);
+  return box;
 }
 
-function productHero(product) {
-  return el("section", { class: "hero-product" }, [
-    icon(product.icon, product.accent),
+function resultsBubble(message) {
+  const { spec, result } = message;
+  const box = el("article", { class: "bubble assistant" }, [
+    el("p", { class: "hint" }, "הבנתי כך"),
+  ]);
+  const notes = el("div", { class: "constraints" });
+  for (const note of describeSpec(spec)) notes.append(el("span", { class: "constraint" }, note));
+  box.append(notes, modeSwitch(spec.mode));
+  const topScore = result.rows[0]?.score ?? 0;
+  const shown = result.rows.filter((row, index) => index === 0 || row.score >= topScore - 2).slice(0, 2);
+  if (shown.length === 0) {
+    box.append(el("p", { class: "empty" }, "לא מצאתי מוצר שמתאים למשפט ולמסננים."));
+  }
+  shown.forEach((row, rowIndex) => box.append(productBlock(row, spec, rowIndex === 0, shown)));
+  box.append(el("p", { class: "source-line" }, sourceLine(result)));
+  return box;
+}
+
+function modeSwitch(active) {
+  const group = el("div", { class: "modes", role: "radiogroup", "aria-label": "מיון" });
+  for (const mode of [
+    ["cheap", "הכי זול"],
+    ["fast", "הכי מהר"],
+    ["balance", "איזון"],
+  ]) {
+    group.append(el("button", {
+      type: "button",
+      class: active === mode[0] ? "mode is-selected" : "mode",
+      role: "radio",
+      "aria-checked": active === mode[0] ? "true" : "false",
+      onclick: () => rerun(mode[0]),
+    }, mode[1]));
+  }
+  return group;
+}
+
+function productBlock(row, spec, primary, rows) {
+  const { product } = row;
+  const wrap = el("section", { class: "product-block" });
+  const head = el("div", { class: "product" }, [
+    html(productArt(product.icon, product.accent), "product-art"),
     el("div", {}, [
-      el("p", { class: "eyebrow" }, product.category),
+      el("p", { class: "eyebrow" }, `${product.brand} · ${product.category}`),
       el("h2", {}, product.name),
-      el("p", {}, product.blurb),
+      el("p", { class: "meta" }, product.blurb),
     ]),
   ]);
-}
-
-function modeSwitch() {
-  const group = el("div", { class: "modes", role: "radiogroup", "aria-label": "מיון ההצעות" });
-  for (const mode of MODES) {
-    const selected = state.mode === mode.id;
-    const button = el("button", {
-      type: "button",
-      class: selected ? "mode is-selected" : "mode",
-      role: "radio",
-      "aria-checked": selected ? "true" : "false",
-      onclick: () => {
-        state.mode = mode.id;
-        render();
-      },
-    }, mode.label);
-    group.append(button);
+  wrap.append(head);
+  if (primary) {
+    const because = explainProduct(product, rows, spec);
+    if (because) wrap.append(el("p", { class: "because" }, because));
   }
-  return el("section", {}, [
-    el("h3", {}, "מה חשוב בבחירה?"),
-    group,
-  ]);
+  if (!row.winner) wrap.append(el("p", { class: "empty" }, noMatchMessage(spec)));
+  wrap.append(channelGroup("אתרים", "online", row, spec));
+  wrap.append(channelGroup("חנויות", "store", row, spec));
+  return wrap;
 }
 
-function offerSection(product) {
-  const intent = activeIntent();
-  const comparison = compareProduct(product, intent);
-  const section = el("section", {}, [
-    el("h3", {}, "אותו מוצר, מוכרים שונים"),
-  ]);
-  if (!comparison.winner) section.append(empty(noMatchMessage(intent)));
-  else if (intent.budget != null || intent.condition === "new" || intent.maxDays != null) {
-    section.append(el("p", { class: "budget-note" }, `${comparison.ranked.length} הצעות עומדות במה שכתבת.`));
+function channelGroup(title, channel, row, spec) {
+  const cards = [
+    ...row.ranked.map((offer) => ({ offer, rejected: "" })),
+    ...row.overBudget.map((offer) => ({ offer, rejected: "מעל התקציב" })),
+    ...row.excluded.map((item) => ({ offer: item.offer, rejected: item.reason })),
+  ].filter((item) => storeById(item.offer.storeId)?.channel === channel);
+  const section = el("div");
+  section.append(el("h3", { class: "channel-title" }, title));
+  if (cards.length === 0) {
+    section.append(el("p", { class: "meta" }, "אין כאן תוצאה לפי מה שביקשת."));
+    return section;
   }
   const list = el("div", { class: "offers" });
-  comparison.ranked.forEach((offer, index) => list.append(offerCard(offer, index === 0)));
-  if (comparison.ranked.length > 0) section.append(list);
-  appendRejected(section, "מעל התקציב", comparison.overBudget.map((offer) => ({ offer, reason: "מעל התקציב שכתבת" })));
-  appendRejected(section, "לא עומד בתנאים", comparison.excluded);
+  for (const card of cards) list.append(offerCard(card.offer, card.rejected, spec, row));
+  section.append(list);
   return section;
 }
 
-function appendRejected(section, title, rows) {
-  if (!rows || rows.length === 0) return;
-  section.append(el("h3", { class: "over-title" }, title));
-  const extra = el("div", { class: "offers" });
-  for (const row of rows) extra.append(offerCard(row.offer, false, row.reason));
-  section.append(extra);
-}
-
-function offerCard(offer, winner, rejectedReason = "") {
+function offerCard(offer, rejected, spec, row) {
+  const store = storeById(offer.storeId);
+  const winner = !rejected && isSameOffer(offer, row.winner);
   const classes = ["offer"];
   if (winner) classes.push("is-winner");
-  if (rejectedReason) classes.push("is-over");
-  const card = el("article", { class: classes.join(" "), "data-store": offer.store });
+  if (rejected) classes.push("is-over");
+  const card = el("article", { class: classes.join(" "), "data-store": store.name });
   if (winner) card.dataset.winner = "true";
   const main = el("div", {}, [
     el("div", { class: "offer-top" }, [
-      el("h4", {}, offer.store),
-      el("span", { class: "pill" }, CONDITION[offer.condition] ?? offer.condition),
-      el("span", { class: "rating" }, `${offer.rating.toFixed(1)} מתוך 5`),
+      el("h3", {}, store.name),
+      el("span", { class: "badge" }, store.channel === "online" ? "אתר" : "חנות"),
+      el("span", { class: "badge" }, CONDITION[offer.condition] ?? offer.condition),
     ]),
-    el("p", { class: "shipping-line" }, shippingLine(offer)),
-    el("p", { class: "detail" }, offer.detail),
+    el("p", { class: "meta" }, `${store.place} · ${offer.color} · מידה ${offer.sizeLabel}`),
+    el("p", { class: "stars" }, `${stars(store.rating)} ${store.rating.toFixed(1)} · ${store.reviewCount} דירוגים`),
+    el("p", { class: "meta" }, shippingLine(offer)),
+    el("button", {
+      type: "button",
+      class: "linkish",
+      onclick: () => toggleReviews(store.id, card),
+    }, state.openReviews.has(store.id) ? "הסתר ביקורות" : "ביקורות מהרשת"),
   ]);
-  if (winner) main.append(el("p", { class: "reason" }, explainDecision(offer, activeIntent())));
-  if (rejectedReason) main.append(el("p", { class: "reason over-reason" }, rejectedReason));
-  const price = el("div", { class: "price-block" }, [
-    el("p", { class: "total" }, formatShekel(totalPrice(offer))),
-    el("p", { class: "split" }, `מוצר ${formatShekel(offer.price)} · משלוח ${offer.shipping === 0 ? "חינם" : formatShekel(offer.shipping)}`),
-  ]);
-  card.append(main, price);
+  if (state.openReviews.has(store.id)) main.append(reviewList(store));
+  if (winner) main.append(el("p", { class: "reason" }, explainDecision(offer, spec)));
+  if (rejected) main.append(el("p", { class: "reason" }, rejected));
+  card.append(
+    html(storeArt(store.channel), "store-art"),
+    main,
+    el("div", {}, [
+      el("p", { class: "total" }, formatShekel(totalPrice(offer))),
+      el("p", { class: "meta" }, offer.shipping === 0 ? "משלוח חינם" : `משלוח ${formatShekel(offer.shipping)}`),
+    ]),
+  );
   return card;
+}
+
+function isSameOffer(offer, winner) {
+  if (!winner) return false;
+  return offer.storeId === winner.storeId && offer.price === winner.price && offer.color === winner.color;
 }
 
 function shippingLine(offer) {
   const shipping = offer.shipping === 0 ? "משלוח חינם" : `משלוח ${formatShekel(offer.shipping)}`;
-  return `${shipping} · ${daysLabel(offer.days)}`;
+  return `${shipping} · ${daysLabel(offer.days)} · ${offer.detail}`;
 }
 
-function similarSection(product) {
-  const related = product.similar.map((id) => productById(products, id)).filter(Boolean);
-  if (related.length === 0) return el("section");
-  const section = el("section", {}, [
-    el("h3", {}, "אפשרויות דומות"),
-    el("p", { class: "section-copy" }, "אלה לא אותו מוצר. אלה חלופות קרובות, עם המחיר הזול ביותר שלהן כולל משלוח."),
-  ]);
-  const grid = el("div", { class: "choice-grid" });
-  for (const item of related) grid.append(productChoice(item, () => selectProduct(item.id)));
-  section.append(grid);
-  return section;
+function reviewList(store) {
+  const list = el("div", { class: "reviews" });
+  for (const review of store.reviews) {
+    list.append(el("p", { class: "review" }, `${review.name} · ${stars(review.stars)} ${review.text}`));
+  }
+  return list;
 }
 
-function productChoice(product, onClick) {
-  const cheapest = compareProduct(product, "cheap", null).winner;
-  const button = el("button", { type: "button", class: "choice", onclick: onClick }, [
-    icon(product.icon, product.accent),
-    el("span", { class: "choice-copy" }, [
-      el("span", { class: "choice-name" }, product.name),
-      el("span", { class: "choice-pitch" }, product.pitch),
-      el("span", { class: "choice-price" }, `החל מ־${formatShekel(totalPrice(cheapest))}`),
-    ]),
-  ]);
-  return button;
+function toggleReviews(storeId, card) {
+  if (state.openReviews.has(storeId)) state.openReviews.delete(storeId);
+  else state.openReviews.add(storeId);
+  const button = card.querySelector(".linkish");
+  const existing = card.querySelector(".reviews");
+  if (existing) existing.remove();
+  button.textContent = state.openReviews.has(storeId) ? "הסתר ביקורות" : "ביקורות מהרשת";
+  if (state.openReviews.has(storeId)) button.after(reviewList(storeById(storeId)));
 }
 
-function empty(text) {
-  return el("p", { class: "empty" }, text);
+function stars(value) {
+  const full = Math.max(0, Math.min(5, Math.floor(value)));
+  return `${"★".repeat(full)}${"☆".repeat(5 - full)}`;
 }
 
-function chip(label, onClick, selected = false) {
-  return el("button", {
-    type: "button",
-    class: selected ? "chip is-selected" : "chip",
-    onclick: onClick,
-  }, label);
+function sourceLine(result) {
+  return `החיפוש רץ על ${result.connectedSources.join(" ועל ")}. סריקה של אתרים אמיתיים עדיין לא מחוברת, כי צריך מקור שהאתר מרשה.`;
 }
 
-function icon(name, accent) {
+function toggleMic() {
+  const Rec = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if (!Rec) {
+    state.messages.push({ role: "assistant", kind: "note", text: "הדפדפן הזה לא נותן להקליט דיבור. אפשר לכתוב את המשפט." });
+    renderThread();
+    return;
+  }
+  if (micBtn.dataset.on === "1") return;
+  const rec = new Rec();
+  rec.lang = "he-IL";
+  micBtn.dataset.on = "1";
+  micBtn.classList.add("is-on");
+  micBtn.textContent = "מקליט…";
+  rec.onresult = (event) => {
+    input.value = event.results[0][0].transcript;
+  };
+  rec.onend = () => {
+    micBtn.dataset.on = "0";
+    micBtn.classList.remove("is-on");
+    micBtn.textContent = "הקלטה";
+  };
+  rec.start();
+}
+
+function html(markup, className) {
   const template = document.createElement("template");
-  template.innerHTML = `<svg viewBox="0 0 48 48" class="icon" aria-hidden="true" style="color:${accent}">${ICONS[name] ?? ICONS.ball}</svg>`;
-  const bubble = el("span", { class: "icon-bubble" });
-  bubble.append(template.content.firstChild);
-  return bubble;
+  template.innerHTML = markup;
+  const node = template.content.firstElementChild;
+  node.classList.add(className);
+  return node;
 }
 
 function el(tag, attrs = {}, children = []) {

@@ -1,5 +1,5 @@
-/** Demo catalog. Prices are fictional and are not live store prices. */
-export const products = [
+/** Demo catalog. Prices, ratings, and reviews are fictional. */
+const rawProducts = [
   {
     id: "soundmini",
     name: "אוזניות אלחוטיות SoundMini",
@@ -271,6 +271,125 @@ export const products = [
     ],
   },
 ];
+
+const storeByName = {
+  "חנות הנקודה": "nekuda",
+  "מחסן החסכון": "machsan",
+  "דיל ישיר": "deal",
+  "מהיר עד הבית": "mahir",
+};
+
+const details = {
+  soundmini: { brand: "SoundMini", colors: ["שחור", "לבן"], sizes: ["אחת"] },
+  sportbuds: { brand: "FitBeat", colors: ["שחור", "כחול"], sizes: ["אחת"] },
+  wiredbuds: { brand: "ClassBeat", colors: ["שחור", "לבן"], sizes: ["אחת"] },
+  bottle750: { brand: "CoolSip", colors: ["כחול", "ירוק"], sizes: ["750 מ״ל"] },
+  bottle500: { brand: "CoolSip", colors: ["כחול", "שקוף"], sizes: ["500 מ״ל"] },
+  shoes: { brand: "Sprint", colors: ["שחור", "אפור"], sizes: ["37", "38", "39"] },
+  schoolshoes: { brand: "Sprint", colors: ["שחור", "לבן"], sizes: ["36", "37", "38"] },
+  lego: { brand: "Bricko", colors: ["צבעוני"], sizes: ["אחת"] },
+  legocar: { brand: "Bricko", colors: ["אדום", "כחול"], sizes: ["אחת"] },
+  mouse: { brand: "Swift", colors: ["שחור", "לבן"], sizes: ["אחת"] },
+  mousebasic: { brand: "Swift", colors: ["שחור", "אפור"], sizes: ["אחת"] },
+  power: { brand: "Volt", colors: ["שחור", "לבן"], sizes: ["10000"] },
+  powersmall: { brand: "Volt", colors: ["לבן", "כחול"], sizes: ["5000"] },
+  ball: { brand: "Kick", colors: ["לבן", "שחור"], sizes: ["5"] },
+  balltrain: { brand: "Kick", colors: ["כתום", "צהוב"], sizes: ["4"] },
+};
+
+export const stores = [
+  {
+    id: "nekuda",
+    name: "חנות הנקודה",
+    channel: "store",
+    place: "חנות ברחוב הרצל, תל אביב",
+    rating: 4.6,
+    reviewCount: 128,
+    reviews: [
+      { name: "נועה", stars: 5, text: "בדקו איתי את המידה בחנות ולא מיהרו." },
+      { name: "אורי", stars: 4, text: "היה תור קצר, והמחיר על המדף היה ברור." },
+    ],
+  },
+  {
+    id: "machsan",
+    name: "מחסן החסכון",
+    channel: "store",
+    place: "חנות במתחם העסקים, חולון",
+    rating: 4.2,
+    reviewCount: 86,
+    reviews: [
+      { name: "דניאל", stars: 4, text: "זול, אבל צריך לבדוק לבד שהקופסה שלמה." },
+      { name: "מאיה", stars: 3, text: "מצאתי מחודש במחיר טוב. לקח כמה ימים עד שהגיע לסניף." },
+    ],
+  },
+  {
+    id: "deal",
+    name: "דיל ישיר",
+    channel: "online",
+    place: "אתר מכירות",
+    rating: 4.4,
+    reviewCount: 240,
+    reviews: [
+      { name: "יובל", stars: 5, text: "ההזמנה באתר הייתה פשוטה והמעקב עבד." },
+      { name: "תמר", stars: 4, text: "המשלוח הגיע יום אחרי מה שהבטיחו, אבל האריזה הייתה תקינה." },
+    ],
+  },
+  {
+    id: "mahir",
+    name: "מהיר עד הבית",
+    channel: "online",
+    place: "אתר מכירות",
+    rating: 4.8,
+    reviewCount: 512,
+    reviews: [
+      { name: "ליאם", stars: 5, text: "הזמנתי בערב והחבילה הייתה בבית למחרת." },
+      { name: "שירה", stars: 4, text: "יקר יותר מחנויות, ובתמורה המשלוח באמת מהיר." },
+    ],
+  },
+  {
+    id: "shuk",
+    name: "אתר השוק",
+    channel: "online",
+    place: "אתר מכירות",
+    rating: 4.1,
+    reviewCount: 73,
+    reviews: [
+      { name: "עומר", stars: 4, text: "המוכר באתר ענה מהר על שאלה לגבי הצבע." },
+      { name: "הילה", stars: 3, text: "המחיר היה טוב. החזרה למוכר לקחה יותר מדי זמן." },
+    ],
+  },
+];
+
+export const collectedFeed = [
+  {
+    productId: "soundmini",
+    storeId: "shuk",
+    price: 189,
+    shipping: 0,
+    days: 2,
+    condition: "new",
+    color: "לבן",
+    sizeLabel: "אחת",
+    detail: "דיווח שנאסף לקובץ הדוגמה, לא מאתר חי",
+  },
+];
+
+export const products = rawProducts.map((product) => {
+  const info = details[product.id];
+  return {
+    ...product,
+    brand: info.brand,
+    colors: info.colors,
+    sizes: info.sizes,
+    offers: product.offers.map((offer, index) => ({
+      ...offer,
+      storeId: storeByName[offer.store],
+      condition: offer.condition === "refurbished" ? "used" : offer.condition,
+      color: info.colors[index % info.colors.length],
+      sizeLabel: info.sizes[index % info.sizes.length],
+    })),
+  };
+});
 
 export const examples = [
   "אוזניות עד 200 שקל, עדיף משלוח מהיר",

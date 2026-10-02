@@ -4,37 +4,32 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>מצא בזול</title>
-  <meta name="description" content="הדגמה להשוואת הצעות קנייה: אותו מוצר אצל כמה מוכרים, ואפשרויות דומות.">
   <link rel="stylesheet" href="css/styles.css">
 </head>
 <body>
-  <header class="site-header">
-    <div class="header-inner">
-      <div class="brand">
-        <div class="mark" aria-hidden="true">בז</div>
+  <div class="app">
+    <aside id="filters" aria-label="סינון"></aside>
+    <div class="main">
+      <header class="top">
         <div>
           <h1>מצא בזול</h1>
-          <p class="tagline">מוצאים הצעה שמתאימה, ומסבירים למה</p>
+          <p>כותבים, מסננים, או מעלים תמונה. התוצאות כוללות חנויות ואתרים.</p>
         </div>
-      </div>
-      <p class="stage">שלב 2 · המנוע</p>
+      </header>
+      <div id="thread" class="thread" aria-live="polite"></div>
+      <form id="composer" class="composer">
+        <div id="pending" class="pending" hidden></div>
+        <label class="sr" for="query">הודעה</label>
+        <textarea id="query" rows="2" placeholder="למשל: נעליים לשיעור ספורט, חדשות, ושלא ייקח שבוע"></textarea>
+        <div class="composer-actions">
+          <input id="photo" type="file" accept="image/*" hidden>
+          <button id="photo-btn" type="button">תמונה</button>
+          <button id="mic-btn" type="button">הקלטה</button>
+          <button id="send-btn" type="submit">שלח</button>
+        </div>
+      </form>
     </div>
-  </header>
-  <main class="page">
-    <p class="notice">המחירים כאן הומצאו לצורך הדגמה. האתר לא מחובר לחנויות, לא גובה תשלום, ולא מציג את המחיר הזול ביותר באינטרנט.</p>
-    <form id="search-form" class="search-card" role="search">
-      <label for="query">מה לחפש?</label>
-      <div class="search-row">
-        <input id="query" name="query" type="search" autocomplete="off" placeholder="למשל: נעליים לשיעור ספורט, חדשות, ושלא ייקח שבוע">
-        <button type="submit">חפש</button>
-      </div>
-      <div id="examples" class="examples"></div>
-    </form>
-    <div id="results"></div>
-  </main>
-  <footer class="site-footer">
-    <p>שלב 2: המנוע קורא משפט חופשי, משאיר רק הצעות שעומדות בתנאים, ומסביר למה.</p>
-  </footer>
+  </div>
   <script type="module" src="js/app.js"></script>
 </body>
 </html>

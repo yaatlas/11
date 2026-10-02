@@ -339,7 +339,7 @@ export function compareProduct(product, modeOrIntent, budget = null) {
   const excluded = [];
   for (const offer of product.offers) {
     if (intent.condition === "new" && offer.condition !== "new") {
-      excluded.push({ offer, reason: "מחודש, וביקשת מוצר חדש" });
+      excluded.push({ offer, reason: "משומש, וביקשת מוצר חדש" });
       continue;
     }
     if (intent.maxDays != null && offer.days > intent.maxDays) {
