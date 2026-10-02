@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>מצא בזול</title>
+  <meta name="description" content="הדגמה להשוואת הצעות קנייה: אותו מוצר אצל כמה מוכרים, ואפשרויות דומות.">
+  <link rel="stylesheet" href="css/styles.css">
+</head>
+<body>
+  <header class="site-header">
+    <div class="header-inner">
+      <div class="brand">
+        <div class="mark" aria-hidden="true">בז</div>
+        <div>
+          <h1>מצא בזול</h1>
+          <p class="tagline">מוצאים הצעה שמתאימה, ומסבירים למה</p>
+        </div>
+      </div>
+      <p class="stage">שלב 1 · קטלוג לדוגמה</p>
+    </div>
+  </header>
+  <main class="page">
+    <p class="notice">המחירים כאן הומצאו לצורך הדגמה. האתר לא מחובר לחנויות, לא גובה תשלום, ולא מציג את המחיר הזול ביותר באינטרנט.</p>
+    <form id="search-form" class="search-card" role="search">
+      <label for="query">מה לחפש?</label>
+      <div class="search-row">
+        <input id="query" name="query" type="search" autocomplete="off" placeholder="למשל: אוזניות עד 200 ש״ח, משלוח מהיר">
+        <button type="submit">חפש</button>
+      </div>
+      <div id="examples" class="examples"></div>
+    </form>
+    <div id="results"></div>
+  </main>
+  <footer class="site-footer">
+    <p>שלב 1: חיפוש, מיון, אותו מוצר אצל מוכרים שונים, ואפשרויות דומות.</p>
+  </footer>
+  <script type="module" src="js/app.js"></script>
+</body>
+</html>
