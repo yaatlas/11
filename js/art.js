@@ -6,6 +6,10 @@ const PATHS = {
   mouse: `<rect x="18" y="10" width="24" height="38" rx="12"/><path d="M30 10v14"/>`,
   battery: `<rect x="10" y="20" width="36" height="20" rx="4"/><path d="M46 26h6v8h-6"/><path d="M18 30h12"/>`,
   ball: `<circle cx="32" cy="32" r="16"/><path d="M16 32h32"/><path d="M32 16c6 7 6 25 0 32"/><path d="M32 16c-6 7-6 25 0 32"/>`,
+  shirt: `<path d="M18 16 26 20 32 14l6 6 8-4 4 8-8 4v22H22V30l-8-4z"/>`,
+  fan: `<circle cx="32" cy="26" r="5"/><path d="M32 21c7-9 15-3 9 6M32 31c-7 9-15 3-9-6M27 26c-9-7-3-15 6-9M37 26c9 7 3 15-6 9"/><path d="M32 38v8M24 48h16"/>`,
+  keyboard: `<rect x="8" y="22" width="48" height="20" rx="4"/><path d="M14 30h4M22 30h4M30 30h4M38 30h4M46 30h4M16 36h24"/>`,
+  pack: `<path d="M20 18h24v30H20z"/><path d="M26 18v-6h12v6"/><path d="M20 30h24"/>`,
 };
 
 export function productArt(icon, accent) {

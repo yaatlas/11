@@ -1,10 +1,8 @@
 import { productArt, storeArt } from "./art.js";
-import { buildSpec, collect, describeSpec, filterChoices, storeById } from "./collector.js";
-import { examples, products } from "./data.js";
+import { applyFacet, buildSpec, categoryById, collect, describeSpec, facetOptions, searchCategories, storeById } from "./collector.js";
 import { daysLabel, explainDecision, explainProduct, formatShekel, noMatchMessage, totalPrice } from "./engine.js";
 
 const CONDITION = { new: "חדש", used: "משומש" };
-const choices = filterChoices();
 const thread = document.querySelector("#thread");
 const filtersRoot = document.querySelector("#filters");
 const form = document.querySelector("#composer");
@@ -18,12 +16,21 @@ const state = {
   mode: "cheap",
   pendingImage: null,
   openReviews: new Set(),
+  filters: {
+    category: "all",
+    categoryQuery: "",
+    channel: "all",
+    condition: "all",
+    priceMin: "",
+    priceMax: "",
+    facets: {},
+  },
 };
 
 const welcome = {
   role: "assistant",
   kind: "welcome",
-  text: "אפשר לכתוב משפט, לבחור מסננים, להקליט, או להעלות תמונה. אני אחפש גם בחנויות וגם באתרים, ואראה דירוג וביקורות. המחירים והביקורות כאן לדוגמה.",
+  text: "כותבים מה צריך, או בוחרים קטגוריה בצד. הסינון משתנה לפי הקטגוריה: בבגדים מופיעים צבע ומידה, במוצרי חשמל מופיעים סוג והספק. אפשר גם להקליט או להעלות תמונה. המחירים כאן להדגמה.",
 };
 
 renderFilters();
@@ -67,7 +74,7 @@ function submit(text) {
     state.messages.push({
       role: "assistant",
       kind: "photo",
-      text: "קיבלתי את התמונה. אין עדיין זיהוי תמונה אוטומטי, אז כתוב מה רואים בה או בחר מוצר קרוב.",
+      text: "קיבלתי את התמונה. אין עדיין זיהוי תמונה אוטומטי, אז כתבו במילים מה רואים בה.",
     });
   } else {
     answer(text);
@@ -82,33 +89,130 @@ function answer(text) {
 }
 
 function rerun(modeOverride = null) {
+  const filters = readFilters();
   const user = [...state.messages].reverse().find((message) => message.role === "user" && message.text);
-  if (!user) return;
-  const resultIndex = state.messages.findLastIndex((message) => message.kind === "results");
-  const spec = buildSpec(user.text, readFilters(), state.mode, modeOverride);
+  const spec = buildSpec(user?.text || "", filters, state.mode, modeOverride);
   state.mode = spec.mode;
-  const next = { role: "assistant", kind: "results", spec, result: collect(spec) };
-  if (resultIndex >= 0) state.messages[resultIndex] = next;
+  if (user) {
+    const resultIndex = state.messages.findLastIndex((message) => message.kind === "results" || message.kind === "browse");
+    const next = { role: "assistant", kind: "results", spec, result: collect(spec) };
+    if (resultIndex >= 0) state.messages[resultIndex] = next;
+    else state.messages.push(next);
+    renderThread();
+    return;
+  }
+  if (spec.category === "all") {
+    state.messages = state.messages.filter((message) => message.kind !== "browse");
+    renderThread();
+    return;
+  }
+  const next = { role: "assistant", kind: "browse", spec, result: collect(spec) };
+  const browseIndex = state.messages.findLastIndex((message) => message.kind === "browse");
+  if (browseIndex >= 0) state.messages[browseIndex] = next;
   else state.messages.push(next);
   renderThread();
 }
 
 function renderFilters() {
+  const query = state.filters.categoryQuery;
+  const caret = document.activeElement?.id === "category-search" ? document.activeElement.selectionStart : null;
   filtersRoot.replaceChildren(
-    el("h2", {}, "סינון"),
-    selectField("category", "קטגוריה", ["all", ...choices.categories], { all: "הכול" }),
+    el("div", { class: "filter-head" }, [
+      el("h2", {}, "סינון"),
+      el("p", { class: "filter-note" }, "קודם קטגוריה. אחר כך מופיעים רק הסינונים שמתאימים לה, והם מצטמצמים לפי מה שכבר נבחר."),
+    ]),
+    categorySearchField(),
+    categoryList(query),
+    facetBlock(),
     selectField("channel", "איפה קונים", ["all", "online", "store"], { all: "חנות ואתר", online: "רק אתר", store: "רק חנות" }),
     selectField("condition", "מצב", ["all", "new", "used"], { all: "הכול", new: "חדש", used: "משומש" }),
-    selectField("brand", "מותג", ["all", ...choices.brands], { all: "הכול" }),
-    selectField("color", "צבע", ["all", ...choices.colors], { all: "הכול" }),
-    selectField("sizeLabel", "מידה", ["all", ...choices.sizes], { all: "הכול" }),
   );
   const prices = el("div", { class: "field" }, [el("span", {}, "טווח מחיר, כולל משלוח")]);
   const row = el("div", { class: "price-row" });
   row.append(numberField("priceMin", "מ־"), numberField("priceMax", "עד"));
   prices.append(row);
-  filtersRoot.append(prices);
-  filtersRoot.append(el("button", { id: "reset", type: "button", onclick: resetFilters }, "נקה סינון"));
+  filtersRoot.append(prices, el("button", { id: "reset", type: "button", onclick: resetFilters }, "נקה סינון"));
+  if (caret != null) {
+    const field = filtersRoot.querySelector("#category-search");
+    field.focus();
+    field.setSelectionRange(caret, caret);
+  }
+}
+
+function categorySearchField() {
+  const field = el("label", { class: "field" }, [el("span", {}, "חיפוש קטגוריה")]);
+  const input = el("input", {
+    id: "category-search",
+    type: "search",
+    placeholder: "למשל ביגוד, חשמל, ספורט",
+    value: state.filters.categoryQuery,
+    autocomplete: "off",
+  });
+  input.addEventListener("input", () => {
+    state.filters.categoryQuery = input.value;
+    renderFilters();
+  });
+  field.append(input);
+  return field;
+}
+
+function categoryList(query) {
+  const found = searchCategories(query);
+  const wrap = el("div", { class: "cat-list", role: "group", "aria-label": "קטגוריות" });
+  if (found.length === 0) {
+    wrap.append(el("p", { class: "meta" }, "אין קטגוריה שמתאימה לחיפוש."));
+    return wrap;
+  }
+  for (const category of found) {
+    const selected = state.filters.category === category.id;
+    wrap.append(el("button", {
+      type: "button",
+      class: selected ? "cat-btn is-selected" : "cat-btn",
+      "aria-pressed": selected ? "true" : "false",
+      onclick: () => chooseCategory(category.id),
+    }, [
+      el("span", { class: "cat-name" }, category.name),
+      el("span", { class: "cat-hint" }, category.hint),
+    ]));
+  }
+  return wrap;
+}
+
+function chooseCategory(id) {
+  state.filters.category = state.filters.category === id ? "all" : id;
+  state.filters.facets = {};
+  renderFilters();
+  rerun();
+}
+
+function facetBlock() {
+  const category = categoryById(state.filters.category);
+  if (!category) {
+    return el("p", { class: "facet-wait" }, "בחרו קטגוריה כדי לפתוח סינון שנגזר ממנה.");
+  }
+  const block = el("section", { class: "facet-block" }, [
+    el("h3", {}, category.name),
+    el("p", { class: "filter-note" }, "האפשרויות כאן שייכות רק לקטגוריה הזו, ומשתנות לפי הבחירה הקודמת."),
+  ]);
+  for (const facet of facetOptions(state.filters.category, state.filters.facets)) {
+    block.append(facetField(facet));
+  }
+  return block;
+}
+
+function facetField(facet) {
+  const field = el("label", { class: "field" }, [el("span", {}, facet.label)]);
+  const select = el("select", { name: `facet-${facet.key}` });
+  select.append(el("option", { value: "all" }, "הכול"));
+  for (const value of facet.values) select.append(el("option", { value }, value));
+  select.value = state.filters.facets[facet.key] ?? "all";
+  select.addEventListener("change", () => {
+    state.filters.facets = applyFacet(state.filters.category, state.filters.facets, facet.key, select.value);
+    renderFilters();
+    rerun();
+  });
+  field.append(select);
+  return field;
 }
 
 function selectField(name, label, values, labels) {
@@ -117,26 +221,53 @@ function selectField(name, label, values, labels) {
   for (const value of values) {
     select.append(el("option", { value }, labels[value] ?? value));
   }
-  select.addEventListener("change", () => rerun());
+  select.value = state.filters[name] ?? "all";
+  select.addEventListener("change", () => {
+    state.filters[name] = select.value;
+    rerun();
+  });
   field.append(select);
   return field;
 }
 
 function numberField(name, placeholder) {
-  const input = el("input", { type: "number", name, min: "0", placeholder, "aria-label": placeholder });
-  input.addEventListener("change", () => rerun());
+  const input = el("input", {
+    type: "number",
+    name,
+    min: "0",
+    placeholder,
+    "aria-label": placeholder,
+    value: state.filters[name] ?? "",
+  });
+  input.addEventListener("change", () => {
+    state.filters[name] = input.value;
+    rerun();
+  });
   return input;
 }
 
 function readFilters() {
-  const data = {};
-  for (const field of filtersRoot.querySelectorAll("[name]")) data[field.name] = field.value;
-  return data;
+  return {
+    category: state.filters.category,
+    channel: state.filters.channel,
+    condition: state.filters.condition,
+    priceMin: state.filters.priceMin,
+    priceMax: state.filters.priceMax,
+    facets: state.filters.facets,
+  };
 }
 
 function resetFilters() {
-  for (const field of filtersRoot.querySelectorAll("select")) field.value = "all";
-  for (const field of filtersRoot.querySelectorAll("input")) field.value = "";
+  state.filters = {
+    category: "all",
+    categoryQuery: "",
+    channel: "all",
+    condition: "all",
+    priceMin: "",
+    priceMax: "",
+    facets: {},
+  };
+  renderFilters();
   rerun();
 }
 
@@ -166,11 +297,11 @@ function renderMessage(message, index = -1) {
 }
 
 function welcomeBubble() {
-  const box = el("article", { class: "bubble assistant" }, [el("p", {}, welcome.text)]);
-  const row = el("div", { class: "chips" });
-  for (const example of examples) row.append(el("button", { type: "button", class: "chip", onclick: () => submit(example) }, example));
-  box.append(row);
-  return box;
+  return el("article", { class: "bubble assistant welcome-card" }, [
+    el("p", { class: "welcome-kicker" }, "השוואת מחירים"),
+    el("h2", {}, "מה מחפשים?"),
+    el("p", {}, welcome.text),
+  ]);
 }
 
 function userBubble(message) {
@@ -185,13 +316,7 @@ function userBubble(message) {
 }
 
 function photoHelp(text) {
-  const box = el("article", { class: "bubble assistant" }, [el("p", {}, text)]);
-  const row = el("div", { class: "chips" });
-  for (const product of products.slice(0, 6)) {
-    row.append(el("button", { type: "button", class: "chip", onclick: () => submit(product.name) }, product.name));
-  }
-  box.append(row);
-  return box;
+  return el("article", { class: "bubble assistant" }, [el("p", {}, text)]);
 }
 
 function resultsBubble(message) {
@@ -203,7 +328,8 @@ function resultsBubble(message) {
   for (const note of describeSpec(spec)) notes.append(el("span", { class: "constraint" }, note));
   box.append(notes, modeSwitch(spec.mode));
   const topScore = result.rows[0]?.score ?? 0;
-  const shown = result.rows.filter((row, index) => index === 0 || row.score >= topScore - 2).slice(0, 2);
+  const limit = spec.text ? 2 : 4;
+  const shown = result.rows.filter((row, index) => index === 0 || row.score >= topScore - 2).slice(0, limit);
   if (shown.length === 0) {
     box.append(el("p", { class: "empty" }, "לא מצאתי מוצר שמתאים למשפט ולמסננים."));
   }
@@ -270,6 +396,17 @@ function channelGroup(title, channel, row, spec) {
   return section;
 }
 
+function offerFacts(product, offer, store) {
+  const keys = new Set((categoryById(product.categoryId)?.facets ?? []).map((facet) => facet.key));
+  const bits = [store.place];
+  if (keys.has("color") && offer.color) bits.push(offer.color);
+  if (keys.has("size") && offer.sizeLabel) bits.push(`מידה ${offer.sizeLabel}`);
+  for (const key of ["connection", "power", "volume", "age"]) {
+    if (keys.has(key) && product[key]) bits.push(product[key]);
+  }
+  return bits.join(" · ");
+}
+
 function offerCard(offer, rejected, spec, row) {
   const store = storeById(offer.storeId);
   const winner = !rejected && isSameOffer(offer, row.winner);
@@ -289,7 +426,7 @@ function offerCard(offer, rejected, spec, row) {
       el("span", { class: "badge" }, store.channel === "online" ? "אתר" : "חנות"),
       el("span", { class: "badge" }, CONDITION[offer.condition] ?? offer.condition),
     ]),
-    el("p", { class: "meta" }, `${store.place} · ${offer.color} · מידה ${offer.sizeLabel}`),
+    el("p", { class: "meta" }, offerFacts(row.product, offer, store)),
     el("p", { class: "stars" }, `${stars(store.rating)} ${store.rating.toFixed(1)} · ${store.reviewCount} דירוגים`),
     el("p", { class: "meta" }, shippingLine(offer)),
     el("button", {

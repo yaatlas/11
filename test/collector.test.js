@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { buildSpec, collect, describeSpec, storeById } from "../js/collector.js";
+import { applyFacet, buildSpec, collect, describeSpec, facetOptions, searchCategories, storeById } from "../js/collector.js";
 import { products, stores } from "../js/data.js";
 
 test("every offer points at a store, and every store has reviews", () => {
@@ -48,6 +48,47 @@ test("new-only filter drops used offers", () => {
   const row = collect(spec).rows.find((item) => item.product.id === "soundmini");
   assert.ok(row.ranked.every((offer) => offer.condition === "new"));
   assert.ok(row.excluded.some((item) => item.offer.condition === "used"));
+});
+
+test("each category exposes only its own filters", () => {
+  const clothing = facetOptions("clothing", {});
+  const electric = facetOptions("appliances", {});
+  assert.ok(clothing.some((facet) => facet.key === "size" && facet.values.includes("M")));
+  assert.ok(clothing.some((facet) => facet.key === "color"));
+  assert.ok(electric.some((facet) => facet.key === "power" && facet.values.includes("30W")));
+  assert.ok(!electric.some((facet) => facet.key === "size" || facet.key === "color"));
+});
+
+test("a clothing type narrows the later filters", () => {
+  const shirts = facetOptions("clothing", { type: "חולצה" });
+  assert.deepEqual(shirts.find((facet) => facet.key === "size").values, ["S", "M", "L"]);
+  assert.deepEqual(shirts.find((facet) => facet.key === "brand").values, ["Cottona"]);
+  const cleaned = applyFacet("clothing", { type: "חולצה", brand: "Northline", size: "XL" }, "type", "חולצה");
+  assert.equal(cleaned.brand, undefined);
+  assert.equal(cleaned.size, undefined);
+  assert.equal(cleaned.type, "חולצה");
+});
+
+test("category search matches a garment word and not appliances", () => {
+  const found = searchCategories("חולצה");
+  assert.ok(found.some((category) => category.id === "clothing"));
+  assert.ok(!found.some((category) => category.id === "appliances"));
+  assert.ok(searchCategories("חשמל").some((category) => category.id === "appliances"));
+});
+
+test("browsing a category without a sentence stays inside that category", () => {
+  const spec = buildSpec("", { category: "appliances", facets: {} });
+  const rows = collect(spec).rows;
+  assert.ok(rows.length >= 2);
+  assert.ok(rows.every((row) => row.product.categoryId === "appliances"));
+  assert.ok(describeSpec(spec).includes("מוצרי חשמל"));
+  const dropped = buildSpec("", { category: "clothing", facets: { type: "חולצה", size: "XL" } });
+  assert.equal(dropped.facets.size, undefined);
+  const sized = buildSpec("", { category: "clothing", facets: { type: "חולצה", size: "S" } });
+  const shirts = collect(sized).rows;
+  assert.equal(shirts.length, 1);
+  assert.equal(shirts[0].product.id, "tee");
+  assert.ok(shirts[0].ranked.every((offer) => offer.sizeLabel === "S"));
 });
 
 test("the live web source is not pretending to be connected", () => {
