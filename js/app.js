@@ -278,9 +278,14 @@ function offerCard(offer, rejected, spec, row) {
   if (rejected) classes.push("is-over");
   const card = el("article", { class: classes.join(" "), "data-store": store.name });
   if (winner) card.dataset.winner = "true";
-  const main = el("div", {}, [
-    el("div", { class: "offer-top" }, [
+  const main = el("div", { class: "offer-body" }, [
+    el("div", { class: "offer-head" }, [
       el("h3", {}, store.name),
+      el("div", { class: "price-col" }, [
+        el("p", { class: "total" }, formatShekel(totalPrice(offer))),
+      ]),
+    ]),
+    el("div", { class: "badges" }, [
       el("span", { class: "badge" }, store.channel === "online" ? "אתר" : "חנות"),
       el("span", { class: "badge" }, CONDITION[offer.condition] ?? offer.condition),
     ]),
@@ -296,14 +301,7 @@ function offerCard(offer, rejected, spec, row) {
   if (state.openReviews.has(store.id)) main.append(reviewList(store));
   if (winner) main.append(el("p", { class: "reason" }, explainDecision(offer, spec)));
   if (rejected) main.append(el("p", { class: "reason" }, rejected));
-  card.append(
-    html(storeArt(store.channel), "store-art"),
-    main,
-    el("div", {}, [
-      el("p", { class: "total" }, formatShekel(totalPrice(offer))),
-      el("p", { class: "meta" }, offer.shipping === 0 ? "משלוח חינם" : `משלוח ${formatShekel(offer.shipping)}`),
-    ]),
-  );
+  card.append(html(storeArt(store.channel), "store-art"), main);
   return card;
 }
 
