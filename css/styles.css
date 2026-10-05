@@ -133,6 +133,21 @@ h1 { font-size: 26px; font-weight: 800; line-height: 1.2; }
 .facet-block .field:last-child { margin-bottom: 0; }
 .welcome-kicker { color: var(--green); font-size: 13px; font-weight: 700; }
 .welcome-card h2 { font-size: 22px; margin: 4px 0 8px; }
+.home-cats { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 14px; }
+.home-cat {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  text-align: right;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  padding: 14px;
+  background: #fff;
+}
+.home-cat.is-selected { border-color: var(--green); background: var(--green-soft); }
+.home-cat .cat-name { font-size: 16px; }
+.home-cat .cat-hint { display: block; }
 .field { display: grid; gap: 6px; margin-bottom: 12px; }
 .field span { color: var(--muted); font-size: 14px; }
 select, input[type="number"], textarea {

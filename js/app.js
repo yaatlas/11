@@ -297,11 +297,25 @@ function renderMessage(message, index = -1) {
 }
 
 function welcomeBubble() {
-  return el("article", { class: "bubble assistant welcome-card" }, [
-    el("p", { class: "welcome-kicker" }, "השוואת מחירים"),
-    el("h2", {}, "מה מחפשים?"),
-    el("p", {}, welcome.text),
+  const box = el("article", { class: "bubble assistant welcome-card" }, [
+    el("p", { class: "welcome-kicker" }, "בחרו תחום"),
+    el("h2", {}, "הסינון משתנה לפי הקטגוריה"),
+    el("p", {}, "אין כאן דוגמאות של מוצרים. בוחרים קטגוריה, ואז מופיעים רק הסינונים ששייכים לה."),
   ]);
+  const grid = el("div", { class: "home-cats" });
+  for (const category of searchCategories("")) {
+    const selected = state.filters.category === category.id;
+    grid.append(el("button", {
+      type: "button",
+      class: selected ? "home-cat is-selected" : "home-cat",
+      onclick: () => chooseCategory(category.id),
+    }, [
+      el("span", { class: "cat-name" }, category.name),
+      el("span", { class: "cat-hint" }, category.hint),
+    ]));
+  }
+  box.append(grid);
+  return box;
 }
 
 function userBubble(message) {
