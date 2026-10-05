@@ -1,6 +1,6 @@
-import { productArt, storeArt } from "./art.js";
-import { applyFacet, buildSpec, categoryById, collect, describeSpec, facetOptions, searchCategories, storeById } from "./collector.js";
-import { daysLabel, explainDecision, explainProduct, formatShekel, noMatchMessage, totalPrice } from "./engine.js";
+import { productArt, storeArt } from "./art.js?v=5";
+import { applyFacet, buildSpec, categoryById, collect, describeSpec, facetOptions, searchCategories, storeById } from "./collector.js?v=5";
+import { daysLabel, explainDecision, explainProduct, formatShekel, noMatchMessage, totalPrice } from "./engine.js?v=5";
 
 const CONDITION = { new: "חדש", used: "משומש" };
 const thread = document.querySelector("#thread");

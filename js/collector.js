@@ -1,4 +1,4 @@
-import { categories, collectedFeed, products, stores } from "./data.js";
+import { categories, collectedFeed, products, stores } from "./data.js?v=5";
 import {
   compareProduct,
   formatShekel,
@@ -6,7 +6,7 @@ import {
   normalize,
   parseQuery,
   searchProducts,
-} from "./engine.js";
+} from "./engine.js?v=5";
 
 const storesById = new Map(stores.map((store) => [store.id, store]));
 
