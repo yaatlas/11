@@ -1,0 +1,10 @@
+{
+  "name": "matza-bezol",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "python3 serve.py",
+    "dev": "python3 serve.py",
+    "test": "node --import ./test/register.mjs --test test/engine.test.js test/collector.test.js"
+  }
+}

@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+  <title>מצא בזול</title>
+  <link rel="stylesheet" href="css/styles.css?v=6">
+</head>
+<body>
+  <div class="app">
+    <aside id="filters" aria-label="סינון"></aside>
+    <div class="main">
+      <div class="stage">
+        <header class="top">
+          <div>
+            <h1>מצא בזול</h1>
+            <p>כותבים מה צריך. המנוע מחליט איפה לחפש, ומציג התאמה וחלופות.</p>
+          </div>
+        </header>
+        <div id="thread" class="thread" aria-live="polite"></div>
+        <form id="composer" class="composer">
+          <div id="pending" class="pending" hidden></div>
+          <label class="sr" for="query">הודעה</label>
+          <textarea id="query" rows="2" placeholder="מה לחפש? אפשר לתאר במילים, או לבחור קטגוריה בצד"></textarea>
+          <div class="composer-actions">
+            <input id="photo" type="file" accept="image/*" hidden>
+            <button id="photo-btn" type="button">תמונה</button>
+            <button id="mic-btn" type="button">הקלטה</button>
+            <button id="send-btn" type="submit">שלח</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+  <script type="module" src="js/app.js?v=6"></script>
+</body>
+</html>
