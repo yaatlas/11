@@ -73,6 +73,14 @@ const STOPWORDS = new Set([
   "שיהיה",
   "תמצא",
   "תחפש",
+  "משומש",
+  "משומשת",
+  "משומשות",
+  "משומשים",
+  "בחנות",
+  "באתר",
+  "אונליין",
+  "איסוף",
 ]);
 
 export function normalize(value) {
@@ -92,6 +100,22 @@ function parseMaxDays(original) {
   const numbered = original.match(/(\d{1,2})\s*ימים/);
   if (numbered) return Number(numbered[1]);
   if (/שבוע/.test(original)) return /שלא|לא יותר|לפני|פחות/.test(original) ? 6 : 7;
+  return null;
+}
+
+function parseCondition(original) {
+  const wantsNew = /בלי מחודש|לא מחודש|אל תראה מחודש|רק חדש|חדש/.test(original);
+  const wantsUsed = /משומש|יד שנייה|יד2/.test(original);
+  if (wantsNew && !wantsUsed) return "new";
+  if (wantsUsed && !wantsNew) return "used";
+  return null;
+}
+
+function parsePlace(original) {
+  const wantsStore = /בחנות|מהחנות|חנות פיזית|איסוף|לאסוף/.test(original);
+  const wantsOnline = /אונליין|באינטרנט|באתר/.test(original);
+  if (wantsStore && !wantsOnline) return "store";
+  if (wantsOnline && !wantsStore) return "online";
   return null;
 }
 
@@ -120,10 +144,12 @@ export function parseQuery(raw) {
 
   const budgetMatch = original.match(/(?:עד|מתחת ל-?|פחות מ-?|לא יותר מ-?)\s*(\d{1,6})/);
   const budget = budgetMatch ? Number(budgetMatch[1]) : null;
-  const condition = /בלי מחודש|לא מחודש|אל תראה מחודש|רק חדש|חדש/.test(original) ? "new" : null;
+  const condition = parseCondition(original);
+  const place = parsePlace(original);
   const stripped = original
     .replace(/(?:עד|מתחת ל-?|פחות מ-?|לא יותר מ-?)\s*\d{1,6}\s*(?:שקל(?:ים)?|ש״ח|ש"ח|שח|₪)?/g, " ")
     .replace(/בית ספר|בית-ספר|עדיף משלוח מהיר|שיגיע מהר|משלוח מהיר|בלי מחודש|לא מחודש|אל תראה מחודש|רק חדש|לא ענק|לא גדול|לא יקר(?:ה|ות|ים)?|למשחקים|משחקי מחשב|שלא ייקח שבוע|לא יותר משבוע/g, " ")
+    .replace(/יד שנייה|יד2|משומש(?:ה|ות|ים)?|בחנות|מהחנות|חנות פיזית|איסוף עצמי|לאסוף|איסוף|אונליין|באינטרנט|באתר/g, " ")
     .replace(/לשיעור|שיעור|ספורט|ריצה|לרוץ|לתיק|גיימינג|כיתה|כיתתי/g, " ");
   const tokens = normalize(stripped)
     .split(" ")
@@ -138,6 +164,7 @@ export function parseQuery(raw) {
     maxDays: parseMaxDays(original),
     uses: parseUses(original),
     size: parseSize(original),
+    place,
   };
 }
 
@@ -340,6 +367,10 @@ export function compareProduct(product, modeOrIntent, budget = null) {
   for (const offer of product.offers) {
     if (intent.condition === "new" && offer.condition !== "new") {
       excluded.push({ offer, reason: "משומש, וביקשת מוצר חדש" });
+      continue;
+    }
+    if (intent.condition === "used" && offer.condition !== "used") {
+      excluded.push({ offer, reason: "חדש, וביקשת מוצר משומש" });
       continue;
     }
     if (intent.maxDays != null && offer.days > intent.maxDays) {

@@ -226,6 +226,39 @@ select, input[type="number"], textarea {
 .linkish { background: none; border: 0; padding: 0; color: var(--green); font-weight: 700; }
 .empty { background: var(--gold); border-radius: 12px; padding: 10px 12px; }
 .source-line { margin-top: 14px; font-size: 14px; }
+.plan, .answer { margin-top: 16px; }
+.plan h3, .answer h3 { font-size: 16px; font-weight: 800; }
+.plan-kinds, .choices { display: grid; gap: 10px; margin-top: 8px; }
+.plan-kinds { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.choices { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.kind, .choice {
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  padding: 12px;
+  background: #fff;
+  min-width: 0;
+}
+.kind.is-fit { background: var(--green-soft); border-color: #b7ddd2; }
+.kind.is-skip { background: #f7f8f7; }
+.kind h4 { font-size: 15px; font-weight: 800; }
+.kind-state { margin-top: 2px; font-size: 13px; font-weight: 700; color: var(--green); }
+.kind.is-skip .kind-state { color: var(--muted); }
+.phrase-box {
+  margin-top: 8px;
+  background: #fff;
+  border: 1px dashed var(--line);
+  border-radius: 12px;
+  padding: 8px 10px;
+  line-height: 1.45;
+}
+.choice { display: flex; flex-direction: column; gap: 6px; }
+.choice.is-match { background: var(--gold); border-color: var(--gold-line); }
+.choice.is-empty { background: #f7f8f7; }
+.choice-role { font-size: 13px; font-weight: 800; color: var(--green); }
+.choice h3 { font-size: 16px; font-weight: 800; line-height: 1.3; }
+.choice-head { display: grid; grid-template-columns: 56px minmax(0, 1fr); gap: 8px; align-items: center; }
+.choice-art { width: 56px; height: 56px; }
+.tradeoff { font-size: 14px; line-height: 1.45; }
 
 .composer {
   margin: 0 16px 16px;
@@ -247,6 +280,7 @@ textarea { resize: vertical; min-height: 64px; }
   #filters { border-left: 0; border-bottom: 1px solid var(--line); max-height: 46vh; }
   .composer { position: sticky; bottom: 0; }
   .offer, .product { grid-template-columns: 44px minmax(0, 1fr); }
+  .plan-kinds, .choices { grid-template-columns: 1fr 1fr; }
   .product-art { width: 72px; height: 72px; }
   .store-art { width: 44px; height: 44px; }
 }

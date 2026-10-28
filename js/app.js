@@ -1,6 +1,6 @@
-import { productArt, storeArt } from "./art.js?v=5";
-import { applyFacet, buildSpec, categoryById, collect, describeSpec, facetOptions, searchCategories, storeById } from "./collector.js?v=5";
-import { daysLabel, explainDecision, explainProduct, formatShekel, noMatchMessage, totalPrice } from "./engine.js?v=5";
+import { productArt } from "./art.js?v=6";
+import { applyFacet, buildSpec, categoryById, collect, describeSpec, facetOptions, searchCategories, storeById } from "./collector.js?v=6";
+import { daysLabel, formatShekel, totalPrice } from "./engine.js?v=6";
 
 const CONDITION = { new: "חדש", used: "משומש" };
 const thread = document.querySelector("#thread");
@@ -30,7 +30,7 @@ const state = {
 const welcome = {
   role: "assistant",
   kind: "welcome",
-  text: "כותבים מה צריך, או בוחרים קטגוריה בצד. הסינון משתנה לפי הקטגוריה: בבגדים מופיעים צבע ומידה, במוצרי חשמל מופיעים סוג והספק. אפשר גם להקליט או להעלות תמונה. המחירים כאן להדגמה.",
+  text: "כותבים מה צריך, או בוחרים קטגוריה. לכל חיפוש יש תוכנית: חדש אונליין, יד שנייה, או מקומי. בתשובה מופיעות ההתאמה וחלופות, עם מה שמתאים ומה שמפסידים. המחירים מקטלוג הדוגמה.",
 };
 
 renderFilters();
@@ -79,7 +79,7 @@ function submit(text) {
   } else {
     answer(text);
   }
-  renderThread();
+  renderThread(true);
 }
 
 function answer(text) {
@@ -98,7 +98,7 @@ function rerun(modeOverride = null) {
     const next = { role: "assistant", kind: "results", spec, result: collect(spec) };
     if (resultIndex >= 0) state.messages[resultIndex] = next;
     else state.messages.push(next);
-    renderThread();
+    renderThread(true);
     return;
   }
   if (spec.category === "all") {
@@ -110,7 +110,7 @@ function rerun(modeOverride = null) {
   const browseIndex = state.messages.findLastIndex((message) => message.kind === "browse");
   if (browseIndex >= 0) state.messages[browseIndex] = next;
   else state.messages.push(next);
-  renderThread();
+  renderThread(true);
 }
 
 function renderFilters() {
@@ -280,12 +280,12 @@ function renderPending() {
   pending.append(image, el("button", { type: "button", onclick: () => { state.pendingImage = null; renderPending(); } }, "הסר תמונה"));
 }
 
-function renderThread() {
+function renderThread(scrollToEnd = false) {
   const atBottom = thread.scrollHeight - thread.scrollTop - thread.clientHeight < 80;
   thread.replaceChildren();
   thread.append(renderMessage(welcome));
   state.messages.forEach((message, index) => thread.append(renderMessage(message, index)));
-  if (atBottom) thread.scrollTop = thread.scrollHeight;
+  if (scrollToEnd || atBottom) thread.scrollTop = thread.scrollHeight;
 }
 
 function renderMessage(message, index = -1) {
@@ -299,8 +299,8 @@ function renderMessage(message, index = -1) {
 function welcomeBubble() {
   const box = el("article", { class: "bubble assistant welcome-card" }, [
     el("p", { class: "welcome-kicker" }, "בחרו תחום"),
-    el("h2", {}, "הסינון משתנה לפי הקטגוריה"),
-    el("p", {}, "אין כאן דוגמאות של מוצרים. בוחרים קטגוריה, ואז מופיעים רק הסינונים ששייכים לה."),
+    el("h2", {}, "התאמה, ולידה החלופות"),
+    el("p", {}, "המנוע מחליט אם לחפש חדש אונליין, יד שנייה, או חנות מקומית. בתשובה רואים מה מתאים ומה מפסידים. מידות נשארות בבגדים, לא במוצרי חשמל."),
   ]);
   const grid = el("div", { class: "home-cats" });
   for (const category of searchCategories("")) {
@@ -340,16 +340,96 @@ function resultsBubble(message) {
   ]);
   const notes = el("div", { class: "constraints" });
   for (const note of describeSpec(spec)) notes.append(el("span", { class: "constraint" }, note));
-  box.append(notes, modeSwitch(spec.mode));
-  const topScore = result.rows[0]?.score ?? 0;
-  const limit = spec.text ? 2 : 4;
-  const shown = result.rows.filter((row, index) => index === 0 || row.score >= topScore - 2).slice(0, limit);
-  if (shown.length === 0) {
-    box.append(el("p", { class: "empty" }, "לא מצאתי מוצר שמתאים למשפט ולמסננים."));
-  }
-  shown.forEach((row, rowIndex) => box.append(productBlock(row, spec, rowIndex === 0, shown)));
+  box.append(notes, modeSwitch(spec.mode), planBlock(result.plan), answerGrid(result.answer));
   box.append(el("p", { class: "source-line" }, sourceLine(result)));
   return box;
+}
+
+function planBlock(plan) {
+  const block = el("section", { class: "plan" }, [el("h3", {}, "איפה לחפש")]);
+  const grid = el("div", { class: "plan-kinds" });
+  for (const kind of plan.kinds) {
+    const card = el("article", {
+      class: kind.fit ? "kind is-fit" : "kind is-skip",
+      "data-kind": kind.id,
+      "data-fit": kind.fit ? "true" : "false",
+    }, [
+      el("h4", {}, kind.title),
+      el("p", { class: "kind-state" }, kind.fit ? "מתאים לחיפוש" : "לא הפעם"),
+      el("p", { class: "meta" }, kind.reason),
+      el("p", { class: "meta" }, providerLine(kind)),
+    ]);
+    grid.append(card);
+  }
+  block.append(grid);
+  const used = plan.kinds.find((kind) => kind.id === "used");
+  if (used?.fit && plan.phrase) {
+    block.append(el("p", { class: "phrase-box" }, `נוסח לפייסבוק מרקטפלייס וליד2, בלי שליפת מחיר: ${plan.phrase}`));
+  }
+  return block;
+}
+
+function providerLine(kind) {
+  return kind.providers.map((provider) => {
+    if (provider.role === "phrase") return `${provider.title}: נוסח בלבד`;
+    return `${provider.title}: ${provider.connected ? "קובץ דוגמה" : "לא מחובר"}`;
+  }).join(" · ");
+}
+
+function answerGrid(answer) {
+  const section = el("section", { class: "answer" }, [
+    el("h3", {}, "ההתאמה והחלופות"),
+    el("p", { class: "meta" }, answer.note),
+  ]);
+  const grid = el("div", { class: "choices", role: "list" });
+  for (const slot of answer.slots) grid.append(choiceCard(slot));
+  section.append(grid);
+  return section;
+}
+
+function choiceCard(slot) {
+  const card = el("article", {
+    class: slot.offer ? `choice is-${slot.role}` : "choice is-empty",
+    role: "listitem",
+    "data-role": slot.role,
+    "data-price-kind": slot.priceKind || "",
+  }, [el("p", { class: "choice-role" }, slot.title)]);
+  if (!slot.product) {
+    card.append(el("p", { class: "tradeoff" }, slot.line));
+    return card;
+  }
+  const head = el("div", { class: "choice-head" }, [
+    html(productArt(slot.product.icon, slot.product.accent), "choice-art"),
+    el("div", {}, [
+      el("p", { class: "eyebrow" }, `${slot.product.brand} · ${slot.product.category}`),
+      el("h3", {}, slot.product.name),
+    ]),
+  ]);
+  card.append(head);
+  if (slot.offer) {
+    const store = storeById(slot.offer.storeId);
+    card.append(el("p", { class: "total" }, formatShekel(totalPrice(slot.offer))));
+    card.append(el("p", { class: "meta" }, choiceMeta(slot, store)));
+    card.append(el("p", { class: "stars" }, `${stars(store.rating)} ${store.rating.toFixed(1)}`));
+    card.append(el("button", {
+      type: "button",
+      class: "linkish",
+      onclick: () => toggleReviews(store.id, card),
+    }, state.openReviews.has(store.id) ? "הסתר ביקורות" : "ביקורות מהרשת"));
+    if (state.openReviews.has(store.id)) card.append(reviewList(store));
+  }
+  card.append(el("p", { class: "tradeoff" }, slot.line));
+  return card;
+}
+
+function choiceMeta(slot, store) {
+  const bits = [store?.name ?? "", daysLabel(slot.offer.days), CONDITION[slot.offer.condition] ?? slot.offer.condition];
+  const keys = new Set((categoryById(slot.product.categoryId)?.facets ?? []).map((facet) => facet.key));
+  if (keys.has("size") && slot.offer.sizeLabel) bits.push(`מידה ${slot.offer.sizeLabel}`);
+  if (keys.has("color") && slot.offer.color) bits.push(slot.offer.color);
+  if (slot.overBudget) bits.push("מעל התקציב");
+  bits.push("מחיר לדוגמה");
+  return bits.filter(Boolean).join(" · ");
 }
 
 function modeSwitch(active) {
@@ -368,102 +448,6 @@ function modeSwitch(active) {
     }, mode[1]));
   }
   return group;
-}
-
-function productBlock(row, spec, primary, rows) {
-  const { product } = row;
-  const wrap = el("section", { class: "product-block" });
-  const head = el("div", { class: "product" }, [
-    html(productArt(product.icon, product.accent), "product-art"),
-    el("div", {}, [
-      el("p", { class: "eyebrow" }, `${product.brand} · ${product.category}`),
-      el("h2", {}, product.name),
-      el("p", { class: "meta" }, product.blurb),
-    ]),
-  ]);
-  wrap.append(head);
-  if (primary) {
-    const because = explainProduct(product, rows, spec);
-    if (because) wrap.append(el("p", { class: "because" }, because));
-  }
-  if (!row.winner) wrap.append(el("p", { class: "empty" }, noMatchMessage(spec)));
-  wrap.append(channelGroup("אתרים", "online", row, spec));
-  wrap.append(channelGroup("חנויות", "store", row, spec));
-  return wrap;
-}
-
-function channelGroup(title, channel, row, spec) {
-  const cards = [
-    ...row.ranked.map((offer) => ({ offer, rejected: "" })),
-    ...row.overBudget.map((offer) => ({ offer, rejected: "מעל התקציב" })),
-    ...row.excluded.map((item) => ({ offer: item.offer, rejected: item.reason })),
-  ].filter((item) => storeById(item.offer.storeId)?.channel === channel);
-  const section = el("div");
-  section.append(el("h3", { class: "channel-title" }, title));
-  if (cards.length === 0) {
-    section.append(el("p", { class: "meta" }, "אין כאן תוצאה לפי מה שביקשת."));
-    return section;
-  }
-  const list = el("div", { class: "offers" });
-  for (const card of cards) list.append(offerCard(card.offer, card.rejected, spec, row));
-  section.append(list);
-  return section;
-}
-
-function offerFacts(product, offer, store) {
-  const keys = new Set((categoryById(product.categoryId)?.facets ?? []).map((facet) => facet.key));
-  const bits = [store.place];
-  if (keys.has("color") && offer.color) bits.push(offer.color);
-  if (keys.has("size") && offer.sizeLabel) bits.push(`מידה ${offer.sizeLabel}`);
-  for (const key of ["connection", "power", "volume", "age"]) {
-    if (keys.has(key) && product[key]) bits.push(product[key]);
-  }
-  return bits.join(" · ");
-}
-
-function offerCard(offer, rejected, spec, row) {
-  const store = storeById(offer.storeId);
-  const winner = !rejected && isSameOffer(offer, row.winner);
-  const classes = ["offer"];
-  if (winner) classes.push("is-winner");
-  if (rejected) classes.push("is-over");
-  const card = el("article", { class: classes.join(" "), "data-store": store.name });
-  if (winner) card.dataset.winner = "true";
-  const main = el("div", { class: "offer-body" }, [
-    el("div", { class: "offer-head" }, [
-      el("h3", {}, store.name),
-      el("div", { class: "price-col" }, [
-        el("p", { class: "total" }, formatShekel(totalPrice(offer))),
-      ]),
-    ]),
-    el("div", { class: "badges" }, [
-      el("span", { class: "badge" }, store.channel === "online" ? "אתר" : "חנות"),
-      el("span", { class: "badge" }, CONDITION[offer.condition] ?? offer.condition),
-    ]),
-    el("p", { class: "meta" }, offerFacts(row.product, offer, store)),
-    el("p", { class: "stars" }, `${stars(store.rating)} ${store.rating.toFixed(1)} · ${store.reviewCount} דירוגים`),
-    el("p", { class: "meta" }, shippingLine(offer)),
-    el("button", {
-      type: "button",
-      class: "linkish",
-      onclick: () => toggleReviews(store.id, card),
-    }, state.openReviews.has(store.id) ? "הסתר ביקורות" : "ביקורות מהרשת"),
-  ]);
-  if (state.openReviews.has(store.id)) main.append(reviewList(store));
-  if (winner) main.append(el("p", { class: "reason" }, explainDecision(offer, spec)));
-  if (rejected) main.append(el("p", { class: "reason" }, rejected));
-  card.append(html(storeArt(store.channel), "store-art"), main);
-  return card;
-}
-
-function isSameOffer(offer, winner) {
-  if (!winner) return false;
-  return offer.storeId === winner.storeId && offer.price === winner.price && offer.color === winner.color;
-}
-
-function shippingLine(offer) {
-  const shipping = offer.shipping === 0 ? "משלוח חינם" : `משלוח ${formatShekel(offer.shipping)}`;
-  return `${shipping} · ${daysLabel(offer.days)} · ${offer.detail}`;
 }
 
 function reviewList(store) {
@@ -490,7 +474,9 @@ function stars(value) {
 }
 
 function sourceLine(result) {
-  return `החיפוש רץ על ${result.connectedSources.join(" ועל ")}. סריקה של אתרים אמיתיים עדיין לא מחוברת, כי צריך מקור שהאתר מרשה.`;
+  const fit = result.plan.kinds.filter((kind) => kind.fit).map((kind) => kind.title);
+  const where = fit.length ? fit.join(", ") : "אף סוג מקור";
+  return `התוכנית: ${where}. המחירים בכרטיסים הם מקטלוג הדוגמה, גם כשמנוע הקניות או eBay מתאימים. הם לא מחוברים, ומפייסבוק ויד2 לא נשלף מחיר.`;
 }
 
 function toggleMic() {

@@ -103,6 +103,26 @@ test("cheap and fast together still mean balance", () => {
   assert.match(result.text, /מטען/);
 });
 
+test("a used sentence stays used, and a store sentence stays local", () => {
+  const used = parseQuery("אוזניות משומשות עד 100");
+  assert.equal(used.condition, "used");
+  assert.equal(used.budget, 100);
+  assert.match(used.text, /אוזניות/);
+  assert.doesNotMatch(used.text, /משומש/);
+  assert.equal(parseQuery("נעליים בחנות").place, "store");
+  assert.equal(parseQuery("אוזניות באתר").place, "online");
+  assert.equal(parseQuery("אוזניות").place, null);
+  assert.equal(parseQuery("עכבר בלי מחודש").condition, "new");
+});
+
+test("used keeps only second-hand offers", () => {
+  const headphones = productById(products, "soundmini");
+  const comparison = compareProduct(headphones, { mode: "cheap", condition: "used", budget: null, maxDays: null });
+  assert.equal(comparison.winner.store, "מחסן החסכון");
+  assert.ok(comparison.ranked.every((offer) => offer.condition === "used"));
+  assert.ok(comparison.excluded.some((item) => item.offer.condition === "new"));
+});
+
 test("every similar product exists and every product has several offers", () => {
   const ids = new Set(products.map((product) => product.id));
   for (const product of products) {
