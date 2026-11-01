@@ -1,6 +1,6 @@
-import { productArt } from "./art.js?v=6";
-import { applyFacet, buildSpec, categoryById, collect, describeSpec, facetOptions, searchCategories, storeById } from "./collector.js?v=6";
-import { daysLabel, formatShekel, totalPrice } from "./engine.js?v=6";
+import { productArt } from "./art.js?v=7";
+import { applyFacet, buildSpec, categoryById, collect, describeSpec, facetOptions, searchCategories, storeById } from "./collector.js?v=7";
+import { daysLabel, formatMoney, formatShekel, totalPrice } from "./engine.js?v=7";
 
 const CONDITION = { new: "חדש", used: "משומש" };
 const thread = document.querySelector("#thread");
@@ -30,8 +30,10 @@ const state = {
 const welcome = {
   role: "assistant",
   kind: "welcome",
-  text: "כותבים מה צריך, או בוחרים קטגוריה. לכל חיפוש יש תוכנית: חדש אונליין, יד שנייה, או מקומי. בתשובה מופיעות ההתאמה וחלופות, עם מה שמתאים ומה שמפסידים. המחירים מקטלוג הדוגמה.",
+  text: "כותבים מה צריך, או בוחרים קטגוריה. החיפוש נשלח לשרת. בלי סיסמה בשרת נשארים מחירי הדוגמה, עם כיתוב שהם דוגמה.",
 };
+
+let requestSerial = 0;
 
 renderFilters();
 renderThread();
@@ -66,51 +68,86 @@ micBtn.addEventListener("click", toggleMic);
 function submit(text) {
   const image = state.pendingImage;
   if (!text && !image) return;
-  state.messages.push({ role: "user", text, image });
   state.pendingImage = null;
   input.value = "";
   renderPending();
+  state.messages.push({ role: "user", text, image });
   if (!text) {
     state.messages.push({
       role: "assistant",
       kind: "photo",
       text: "קיבלתי את התמונה. אין עדיין זיהוי תמונה אוטומטי, אז כתבו במילים מה רואים בה.",
     });
-  } else {
-    answer(text);
+    renderThread(true);
+    return;
   }
+  const placeholder = { role: "assistant", kind: "note", pending: true, text: "מחפש עכשיו…" };
+  state.messages.push(placeholder);
   renderThread(true);
-}
-
-function answer(text) {
-  const spec = buildSpec(text, readFilters(), state.mode);
-  state.mode = spec.mode;
-  state.messages.push({ role: "assistant", kind: "results", spec, result: collect(spec) });
+  placeResults({ prompt: text, filters: readFilters(), mode: state.mode, modeOverride: null, placeholder });
 }
 
 function rerun(modeOverride = null) {
   const filters = readFilters();
   const user = [...state.messages].reverse().find((message) => message.role === "user" && message.text);
-  const spec = buildSpec(user?.text || "", filters, state.mode, modeOverride);
-  state.mode = spec.mode;
-  if (user) {
-    const resultIndex = state.messages.findLastIndex((message) => message.kind === "results" || message.kind === "browse");
-    const next = { role: "assistant", kind: "results", spec, result: collect(spec) };
-    if (resultIndex >= 0) state.messages[resultIndex] = next;
-    else state.messages.push(next);
-    renderThread(true);
-    return;
-  }
-  if (spec.category === "all") {
-    state.messages = state.messages.filter((message) => message.kind !== "browse");
+  if (!user && (filters.category === "all" || !filters.category)) {
+    requestSerial += 1;
+    state.messages = state.messages.filter((message) => message.kind !== "browse" && !message.pending);
     renderThread();
     return;
   }
-  const next = { role: "assistant", kind: "browse", spec, result: collect(spec) };
-  const browseIndex = state.messages.findLastIndex((message) => message.kind === "browse");
-  if (browseIndex >= 0) state.messages[browseIndex] = next;
+  const placeholder = { role: "assistant", kind: "note", pending: true, text: "מחפש עכשיו…" };
+  const resultIndex = state.messages.findLastIndex((message) => message.kind === "results" || message.kind === "browse" || message.pending);
+  if (resultIndex >= 0) state.messages[resultIndex] = placeholder;
+  else state.messages.push(placeholder);
+  renderThread(true);
+  placeResults({
+    prompt: user?.text || "",
+    filters,
+    mode: state.mode,
+    modeOverride,
+    placeholder,
+  });
+}
+
+async function placeResults({ prompt, filters, mode, modeOverride, placeholder }) {
+  const serial = ++requestSerial;
+  const payload = await searchOnServer({ prompt, filters, mode, modeOverride });
+  if (serial !== requestSerial) return;
+  state.mode = payload.spec.mode;
+  const next = {
+    role: "assistant",
+    kind: prompt ? "results" : "browse",
+    spec: payload.spec,
+    result: payload.result,
+  };
+  const index = state.messages.indexOf(placeholder);
+  if (index >= 0) state.messages[index] = next;
   else state.messages.push(next);
   renderThread(true);
+}
+
+async function searchOnServer(body) {
+  try {
+    const response = await fetch("/api/search", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      cache: "no-store",
+      body: JSON.stringify(body),
+    });
+    if (!response.ok) throw new Error(String(response.status));
+    const payload = await response.json();
+    if (!payload?.result?.answer || !payload?.spec) throw new Error("bad payload");
+    return payload;
+  } catch {
+    const spec = buildSpec(body.prompt || "", body.filters || {}, body.mode || "cheap", body.modeOverride || null);
+    const result = collect(spec);
+    result.answer = {
+      ...result.answer,
+      note: "המחירים בכרטיסים הם דוגמה מקטלוג ההדגמה. החיפוש לא הגיע לשרת, אז לא יצאה קריאה למנוע הקניות או ל-eBay.",
+    };
+    return { spec, result };
+  }
 }
 
 function renderFilters() {
@@ -300,7 +337,7 @@ function welcomeBubble() {
   const box = el("article", { class: "bubble assistant welcome-card" }, [
     el("p", { class: "welcome-kicker" }, "בחרו תחום"),
     el("h2", {}, "התאמה, ולידה החלופות"),
-    el("p", {}, "המנוע מחליט אם לחפש חדש אונליין, יד שנייה, או חנות מקומית. בתשובה רואים מה מתאים ומה מפסידים. מידות נשארות בבגדים, לא במוצרי חשמל."),
+    el("p", {}, "המנוע מחליט אם לחפש חדש אונליין, יד שנייה, או חנות מקומית. בתשובה רואים מה מתאים ומה מפסידים. מידות נשארות בבגדים, לא במוצרי חשמל. בלי סיסמה בשרת המחירים הם דוגמה."),
   ]);
   const grid = el("div", { class: "home-cats" });
   for (const category of searchCategories("")) {
@@ -372,6 +409,13 @@ function planBlock(plan) {
 function providerLine(kind) {
   return kind.providers.map((provider) => {
     if (provider.role === "phrase") return `${provider.title}: נוסח בלבד`;
+    const call = provider.call;
+    if (provider.id === "shopping" || provider.id === "ebay") {
+      if (call?.sent && call.reason === "ok") return `${provider.title}: מהחיפוש הזה`;
+      if (call?.sent) return `${provider.title}: יצאה קריאה, אין תוצאה`;
+      if (call?.reason === "missing-secret") return `${provider.title}: לא יצאה קריאה, אין סיסמה בשרת`;
+      if (!kind.fit) return `${provider.title}: לא הפעם`;
+    }
     return `${provider.title}: ${provider.connected ? "קובץ דוגמה" : "לא מחובר"}`;
   }).join(" · ");
 }
@@ -407,22 +451,51 @@ function choiceCard(slot) {
   ]);
   card.append(head);
   if (slot.offer) {
-    const store = storeById(slot.offer.storeId);
-    card.append(el("p", { class: "total" }, formatShekel(totalPrice(slot.offer))));
+    const store = slot.offer.storeId ? storeById(slot.offer.storeId) : null;
+    card.append(el("p", { class: "total" }, [
+      choicePrice(slot),
+      " ",
+      el("span", { class: slot.priceKind === "live" ? "badge badge-live" : "badge badge-demo" }, slot.priceKind === "live" ? "מהחיפוש הזה" : "מחיר לדוגמה"),
+    ]));
     card.append(el("p", { class: "meta" }, choiceMeta(slot, store)));
-    card.append(el("p", { class: "stars" }, `${stars(store.rating)} ${store.rating.toFixed(1)}`));
-    card.append(el("button", {
-      type: "button",
-      class: "linkish",
-      onclick: () => toggleReviews(store.id, card),
-    }, state.openReviews.has(store.id) ? "הסתר ביקורות" : "ביקורות מהרשת"));
-    if (state.openReviews.has(store.id)) card.append(reviewList(store));
+    if (store) {
+      card.append(el("p", { class: "stars" }, `${stars(store.rating)} ${store.rating.toFixed(1)}`));
+      card.append(el("button", {
+        type: "button",
+        class: "linkish",
+        onclick: () => toggleReviews(store.id, card),
+      }, state.openReviews.has(store.id) ? "הסתר ביקורות" : "ביקורות מהרשת"));
+      if (state.openReviews.has(store.id)) card.append(reviewList(store));
+    } else if (slot.priceKind === "live" && slot.offer.url) {
+      card.append(el("a", { class: "linkish", href: slot.offer.url, target: "_blank", rel: "noopener noreferrer" }, "לדף המוצר"));
+    }
   }
   card.append(el("p", { class: "tradeoff" }, slot.line));
   return card;
 }
 
+function choicePrice(slot) {
+  if (slot.priceKind === "live") {
+    const currency = slot.offer.currency || null;
+    if (slot.offer.shipping == null) return formatMoney(slot.offer.price, currency);
+    return formatMoney(slot.offer.price + slot.offer.shipping, currency);
+  }
+  return formatShekel(totalPrice(slot.offer));
+}
+
 function choiceMeta(slot, store) {
+  if (slot.priceKind === "live") {
+    const bits = [slot.offer.seller || "החנות לא צוינה"];
+    if (slot.offer.days != null) bits.push(daysLabel(slot.offer.days));
+    else bits.push("זמן משלוח לא צוין");
+    if (slot.offer.condition === "new" || slot.offer.condition === "used") bits.push(CONDITION[slot.offer.condition]);
+    else bits.push("מצב לא צוין");
+    const keys = new Set((categoryById(slot.product.categoryId)?.facets ?? []).map((facet) => facet.key));
+    if (keys.has("size") && slot.offer.sizeLabel) bits.push(`מידה ${slot.offer.sizeLabel}`);
+    if (keys.has("color") && slot.offer.color) bits.push(slot.offer.color);
+    bits.push("מהחיפוש הזה");
+    return bits.filter(Boolean).join(" · ");
+  }
   const bits = [store?.name ?? "", daysLabel(slot.offer.days), CONDITION[slot.offer.condition] ?? slot.offer.condition];
   const keys = new Set((categoryById(slot.product.categoryId)?.facets ?? []).map((facet) => facet.key));
   if (keys.has("size") && slot.offer.sizeLabel) bits.push(`מידה ${slot.offer.sizeLabel}`);
@@ -476,7 +549,13 @@ function stars(value) {
 function sourceLine(result) {
   const fit = result.plan.kinds.filter((kind) => kind.fit).map((kind) => kind.title);
   const where = fit.length ? fit.join(", ") : "אף סוג מקור";
-  return `התוכנית: ${where}. המחירים בכרטיסים הם מקטלוג הדוגמה, גם כשמנוע הקניות או eBay מתאימים. הם לא מחוברים, ומפייסבוק ויד2 לא נשלף מחיר.`;
+  if (result.answer.priceKind === "live") {
+    return `התוכנית: ${where}. כל מחיר חי מסומן כמחיר מהחיפוש הזה. מפייסבוק ויד2 לא נשלף מחיר.`;
+  }
+  if (result.answer.priceKind === "none") {
+    return `התוכנית: ${where}. אין תוצאה בחיפוש הזה, אז אין מחיר להציג. מפייסבוק ויד2 לא נשלף מחיר.`;
+  }
+  return `התוכנית: ${where}. המחירים בכרטיסים הם דוגמה, לא מחיר אמיתי. מפייסבוק ויד2 לא נשלף מחיר.`;
 }
 
 function toggleMic() {

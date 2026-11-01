@@ -219,6 +219,10 @@ select, input[type="number"], textarea {
 .offer-top, .badges { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
 .badge, .stars { color: var(--muted); font-size: 13px; }
 .badge { border: 1px solid var(--line); border-radius: 999px; padding: 1px 8px; background: #fff; }
+.badge-live { background: var(--green-soft); color: var(--green); border-color: #b7ddd2; }
+.badge-demo { background: var(--gold); color: #6d5a2b; border-color: var(--gold-line); }
+.total .badge { font-size: 12px; margin-inline-start: 6px; vertical-align: middle; }
+a.linkish { text-decoration: none; }
 .reason { margin-top: 8px; font-weight: 700; }
 .total { font-size: 22px; font-weight: 800; color: var(--green); line-height: 1.2; white-space: nowrap; }
 .reviews { grid-column: 2 / -1; display: grid; gap: 6px; }

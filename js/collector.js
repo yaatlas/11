@@ -1,4 +1,4 @@
-import { categories, collectedFeed, products, stores } from "./data.js?v=6";
+import { categories, collectedFeed, products, stores } from "./data.js?v=7";
 import {
   compareProduct,
   daysLabel,
@@ -9,7 +9,7 @@ import {
   rankOffers,
   searchProducts,
   totalPrice,
-} from "./engine.js?v=6";
+} from "./engine.js?v=7";
 
 const storesById = new Map(stores.map((store) => [store.id, store]));
 

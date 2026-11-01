@@ -15,6 +15,23 @@ export function formatShekel(amount) {
   }).format(amount);
 }
 
+export function formatMoney(amount, currency) {
+  const number = Number(amount);
+  if (!Number.isFinite(number)) return "";
+  if (!currency) return `${number} (מטבע לא צוין)`;
+  const code = currency === "₪" ? "ILS" : currency;
+  const fraction = Number.isInteger(number) ? 0 : 2;
+  try {
+    return new Intl.NumberFormat("he-IL", {
+      style: "currency",
+      currency: code,
+      maximumFractionDigits: fraction,
+    }).format(number);
+  } catch {
+    return `${number} ${code}`;
+  }
+}
+
 const STOPWORDS = new Set([
   "עד",
   "מתחת",
